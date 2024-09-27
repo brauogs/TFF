@@ -142,14 +142,22 @@ def graficar_ratio_y_promedio(resultados, fs, tipo_ratio):
     frecuencias = resultados[numerador]['frecuencias_fft']
     
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=frecuencias, y=ratio, name=f'Ratio {tipo_ratio}'))
+    fig.add_trace(go.Scatter(x=frecuencias, y=ratio, name=f'Ratio {tipo_ratio}', line=dict(color='blue')))
     
     # Calcular y graficar el promedio móvil
     tamano_ventana = 10
     promedio_movil = np.convolve(ratio, np.ones(tamano_ventana)/tamano_ventana, mode='valid')
-    fig.add_trace(go.Scatter(x=frecuencias[tamano_ventana-1:], y=promedio_movil, name=f'Promedio Móvil {tipo_ratio}'))
+    fig.add_trace(go.Scatter(x=frecuencias[tamano_ventana-1:], y=promedio_movil, 
+                             name=f'Promedio Móvil {tipo_ratio}', line=dict(color='red')))
     
-    fig.update_layout(title=f'Ratio {tipo_ratio} y Promedio Móvil',
+    # Calcular y graficar la desviación estándar
+    desviacion_estandar = np.std(ratio)
+    fig.add_trace(go.Scatter(x=frecuencias, y=np.ones_like(frecuencias) * (np.mean(ratio) + desviacion_estandar),
+                             name='Desviación Estándar Superior', line=dict(color='green', dash='dot')))
+    fig.add_trace(go.Scatter(x=frecuencias, y=np.ones_like(frecuencias) * (np.mean(ratio) - desviacion_estandar),
+                             name='Desviación Estándar Inferior', line=dict(color='green', dash='dot')))
+    
+    fig.update_layout(title=f'Ratio {tipo_ratio}, Promedio Móvil y Desviación Estándar',
                       xaxis_title='Frecuencia (Hz)',
                       yaxis_title='Ratio',
                       height=600, width=1000)
@@ -220,7 +228,7 @@ if archivo_subido is not None:
             st.plotly_chart(fig_fft)
 
         if canal_seleccionado == 'Todos los canales':
-            st.subheader("Ratios X/Z e Y/Z")
+            st.subheader("Ratios X/Z e Y/Z con Desviación Estándar")
             fig_ratio_xz = graficar_ratio_y_promedio(resultados, fs, 'X/Z')
             st.plotly_chart(fig_ratio_xz)
             fig_ratio_yz = graficar_ratio_y_promedio(resultados, fs, 'Y/Z')
@@ -268,7 +276,7 @@ st.sidebar.markdown("""
 4. Especifica el número de rutinas FFT a realizar.
 5. Haz clic en 'Analizar datos'.
 6. Observa las secciones seleccionadas y sus respectivos FFT.
-7. Si seleccionaste 'Todos los canales', observa los ratios X/Z e Y/Z y sus promedios.
+7. Si seleccionaste 'Todos los canales', observa los ratios X/Z e Y/Z, sus promedios y desviaciones estándar.
 8. Usa el botón para copiar el espectro de Fourier al portapapeles (solo para canales individuales).
 9. Descarga los datos procesados si lo deseas.
 """)
