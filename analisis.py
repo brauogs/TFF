@@ -148,7 +148,7 @@ def graficar_ratio_y_promedio(resultados, fs, tipo_ratio):
     tamano_ventana = 10
     promedio_movil = np.convolve(ratio, np.ones(tamano_ventana)/tamano_ventana, mode='valid')
     fig.add_trace(go.Scatter(x=frecuencias[tamano_ventana-1:], y=promedio_movil, 
-                             name=f'Promedio Móvil {tipo_ratio}', line=dict(color='red')))
+                             name=f'Promedio {tipo_ratio}', line=dict(color='red')))
     
     # Calcular y graficar la desviación estándar
     desviacion_estandar = np.std(ratio)
@@ -157,7 +157,7 @@ def graficar_ratio_y_promedio(resultados, fs, tipo_ratio):
     fig.add_trace(go.Scatter(x=frecuencias, y=np.ones_like(frecuencias) * (np.mean(ratio) - desviacion_estandar),
                              name='Desviación Estándar Inferior', line=dict(color='green', dash='dot')))
     
-    fig.update_layout(title=f'Ratio {tipo_ratio}, Promedio Móvil y Desviación Estándar',
+    fig.update_layout(title=f'Ratio {tipo_ratio}, Promedio y Desviación Estándar',
                       xaxis_title='Frecuencia (Hz)',
                       yaxis_title='Ratio',
                       height=600, width=1000)
