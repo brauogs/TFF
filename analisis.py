@@ -29,6 +29,7 @@ def calcular_fft(datos, fs):
 
 def procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_taper):
     fs_predeterminada = 100  # Puedes ajustar esto según tus datos o especificaciones del sensor
+    fs = fs_predeterminada  # Inicializamos fs con el valor predeterminado
     
     # Verificar si existe una columna de tiempo
     columnas_tiempo = ['marca_tiempo', 'timestamp', 'tiempo']
@@ -46,20 +47,18 @@ def procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_tape
             else:
                 # Calcula la diferencia de tiempo si la conversión fue exitosa
                 diferencia_tiempo = (df[columna_tiempo].iloc[1] - df[columna_tiempo].iloc[0]).total_seconds()
-                if diferencia_tiempo == 0:
-                    fs = fs_predeterminada
-                else:
+                if diferencia_tiempo > 0:
                     fs = 1 / diferencia_tiempo
         except Exception as e:
             st.warning(f"Error al procesar la columna de tiempo: {str(e)}. Se usará un índice numérico en su lugar.")
             df[columna_tiempo] = pd.to_numeric(df.index)
-            fs = fs_predeterminada
     else:
         # Si no hay columna de tiempo, usamos el índice como tiempo
         st.warning("No se encontró una columna de tiempo válida. Se usará el índice como tiempo.")
         df['tiempo'] = pd.to_numeric(df.index)
         columna_tiempo = 'tiempo'
-        fs = fs_predeterminada
+
+    st.info(f"Frecuencia de muestreo utilizada: {fs} Hz")
 
     resultados = {}
     for canal in canales:
