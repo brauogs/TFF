@@ -29,13 +29,38 @@ def calcular_fft(datos, fs):
 
 def procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_taper):
     fs_predeterminada = 100  # Puedes ajustar esto según tus datos o especificaciones del sensor
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    diferencia_tiempo = (df['timestamp'].iloc[1] - df['timestamp'].iloc[0]).total_seconds()
-    if diferencia_tiempo == 0:
-        fs = fs_predeterminada
-    else:
-        fs = 1 / diferencia_tiempo
     
+    # Verificar si existe una columna de tiempo
+    columnas_tiempo = ['marca_tiempo', 'timestamp', 'tiempo']
+    columna_tiempo = next((col for col in columnas_tiempo if col in df.columns), None)
+    
+    if columna_tiempo:
+        try:
+            # Intenta convertir la columna de tiempo a datetime
+            df[columna_tiempo] = pd.to_datetime(df[columna_tiempo], errors='coerce')
+            
+            # Verifica si hay valores NaT (Not a Time) después de la conversión
+            if df[columna_tiempo].isnull().any():
+                st.warning(f"Algunos valores en la columna {columna_tiempo} no pudieron ser convertidos a fechas. Se usará un índice numérico en su lugar.")
+                df[columna_tiempo] = pd.to_numeric(df.index)
+            else:
+                # Calcula la diferencia de tiempo si la conversión fue exitosa
+                diferencia_tiempo = (df[columna_tiempo].iloc[1] - df[columna_tiempo].iloc[0]).total_seconds()
+                if diferencia_tiempo == 0:
+                    fs = fs_predeterminada
+                else:
+                    fs = 1 / diferencia_tiempo
+        except Exception as e:
+            st.warning(f"Error al procesar la columna de tiempo: {str(e)}. Se usará un índice numérico en su lugar.")
+            df[columna_tiempo] = pd.to_numeric(df.index)
+            fs = fs_predeterminada
+    else:
+        # Si no hay columna de tiempo, usamos el índice como tiempo
+        st.warning("No se encontró una columna de tiempo válida. Se usará el índice como tiempo.")
+        df['tiempo'] = pd.to_numeric(df.index)
+        columna_tiempo = 'tiempo'
+        fs = fs_predeterminada
+
     resultados = {}
     for canal in canales:
         # Aplicar filtro pasabanda
@@ -54,7 +79,7 @@ def procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_tape
             'magnitudes_fft': magnitudes
         }
     
-    return resultados, fs
+    return resultados, fs, columna_tiempo
 
 def graficar_resultados(resultados, fs, canales):
     if len(canales) == 1:
@@ -142,6 +167,10 @@ if archivo_subido is not None:
     st.write("Visualizar datos:")
     st.write(df.head())
 
+    # Verificar las columnas existentes
+    columnas_existentes = df.columns.tolist()
+    st.write("Columnas en el archivo:", columnas_existentes)
+
     opciones_canal = ['x', 'y', 'z', 'Todos los canales']
     canal_seleccionado = st.selectbox("Selecciona el canal a analizar", opciones_canal)
 
@@ -154,7 +183,7 @@ if archivo_subido is not None:
 
     if st.button("Analizar datos"):
         canales = ['x', 'y', 'z'] if canal_seleccionado == 'Todos los canales' else [canal_seleccionado]
-        resultados, fs = procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_taper)
+        resultados, fs, columna_tiempo = procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_taper)
         fig = graficar_resultados(resultados, fs, canales)
         st.plotly_chart(fig)
 
@@ -168,11 +197,11 @@ if archivo_subido is not None:
             
             # Graficar secciones seleccionadas
             fig_secciones = go.Figure()
-            fig_secciones.add_trace(go.Scatter(x=np.arange(len(resultados[canal]['serie_filtrada'])) / fs, 
+            fig_secciones.add_trace(go.Scatter(x=df[columna_tiempo], 
                                                y=resultados[canal]['serie_filtrada'], 
                                                name=f"Señal filtrada {canal.upper()}"))
             for i, (inicio, fin) in enumerate(secciones):
-                fig_secciones.add_trace(go.Scatter(x=np.arange(inicio, fin) / fs, 
+                fig_secciones.add_trace(go.Scatter(x=df[columna_tiempo].iloc[inicio:fin], 
                                                    y=resultados[canal]['serie_filtrada'][inicio:fin], 
                                                    name=f"Sección {i+1}",
                                                    line=dict(width=3)))
@@ -200,8 +229,8 @@ if archivo_subido is not None:
 
         # Preparar datos para descargar
         salida = io.StringIO()
-        datos_para_csv = {'tiempo': np.arange(len(resultados[canales[0]]['serie_tiempo'])) / fs}
-        longitud_maxima = len(datos_para_csv['tiempo'])
+        datos_para_csv = {columna_tiempo: df[columna_tiempo]}
+        longitud_maxima = len(datos_para_csv[columna_tiempo])
 
         for canal in canales:
             # Asegurar que todos los arrays tengan la misma longitud rellenando con valores NaN
@@ -233,7 +262,8 @@ else:
 
 st.sidebar.header("Instrucciones")
 st.sidebar.markdown("""
-1. Sube el archivo en formato CSV con columnas 'marca_tiempo', 'x', 'y', y 'z'.
+1. Sube el archivo en formato CSV. El archivo debe contener columnas para los canales 'x', 'y', y 'z'.
+   Si existe, también puede incluir una columna de tiempo ('marca_tiempo', 'timestamp', o 'tiempo').
 2. Selecciona el canal a analizar (x, y, z, o todos los canales).
 3. Ajusta los parámetros de filtrado y de taper.
 4. Especifica el número de rutinas FFT a realizar.
