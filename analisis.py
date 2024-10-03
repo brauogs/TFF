@@ -131,8 +131,19 @@ def copiar_espectro_al_portapapeles(resultados, canal):
 def seleccionar_secciones_aleatorias(datos, fs, num_secciones=5, duracion_seccion=30):
     longitud_seccion = int(duracion_seccion * fs)
     inicio_maximo = len(datos) - longitud_seccion
+    
+    if inicio_maximo <= 0:
+        st.warning("La duración de la sección es mayor que los datos disponibles. Se utilizará toda la serie de datos.")
+        return [(0, len(datos))]
+    
+    num_secciones = min(num_secciones, inicio_maximo)
+    
+    if num_secciones == 0:
+        st.warning("No hay suficientes datos para seleccionar secciones. Se utilizará toda la serie de datos.")
+        return [(0, len(datos))]
+    
     indices_inicio = sorted(random.sample(range(inicio_maximo), num_secciones))
-    return [(inicio, inicio + longitud_seccion) for inicio in indices_inicio]
+    return [(inicio, min(inicio + longitud_seccion, len(datos))) for inicio in indices_inicio]
 
 def graficar_ratio_y_promedio(resultados, fs, tipo_ratio):
     numerador = 'x' if tipo_ratio == 'X/Z' else 'y'
@@ -198,33 +209,33 @@ if archivo_subido is not None:
             if st.button(f'Copiar el espectro de Fourier del canal {canal_seleccionado.upper()} al portapapeles'):
                 copiar_espectro_al_portapapeles(resultados, canal_seleccionado)
 
-        st.subheader(f"Rutinas FFT en {num_rutinas_fft} secciones aleatorias")
+        st.subheader(f"Rutinas FFT en secciones aleatorias")
         for canal in canales:
             secciones = seleccionar_secciones_aleatorias(resultados[canal]['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
             
             # Graficar secciones seleccionadas
             fig_secciones = go.Figure()
             fig_secciones.add_trace(go.Scatter(x=df[columna_tiempo], 
-                                               y=resultados[canal]['serie_filtrada'], 
-                                               name=f"Señal filtrada {canal.upper()}"))
+                                            y=resultados[canal]['serie_filtrada'], 
+                                            name=f"Señal filtrada {canal.upper()}"))
             for i, (inicio, fin) in enumerate(secciones):
                 fig_secciones.add_trace(go.Scatter(x=df[columna_tiempo].iloc[inicio:fin], 
-                                                   y=resultados[canal]['serie_filtrada'][inicio:fin], 
-                                                   name=f"Sección {i+1}",
-                                                   line=dict(width=3)))
+                                                y=resultados[canal]['serie_filtrada'][inicio:fin], 
+                                                name=f"Sección {i+1}",
+                                                line=dict(width=3)))
             fig_secciones.update_layout(height=400, width=1000, title_text=f"Secciones seleccionadas para FFT - Canal {canal.upper()}")
             st.plotly_chart(fig_secciones)
 
             # Calcular y graficar FFT para cada sección
-            fig_fft = make_subplots(rows=num_rutinas_fft, cols=1, 
-                                    subplot_titles=[f"FFT Sección {i+1}" for i in range(num_rutinas_fft)])
+            fig_fft = make_subplots(rows=len(secciones), cols=1, 
+                                    subplot_titles=[f"FFT Sección {i+1}" for i in range(len(secciones))])
             for i, (inicio, fin) in enumerate(secciones):
                 datos_seccion = resultados[canal]['serie_filtrada'][inicio:fin]
                 frecuencias, magnitudes = calcular_fft(datos_seccion, fs)
                 fig_fft.add_trace(go.Scatter(x=frecuencias, y=magnitudes, name=f"FFT Sección {i+1}"), row=i+1, col=1)
                 fig_fft.update_xaxes(title_text="Frecuencia (Hz)", row=i+1, col=1)
                 fig_fft.update_yaxes(title_text="Magnitud", row=i+1, col=1)
-            fig_fft.update_layout(height=300*num_rutinas_fft, width=1000, title_text=f"FFT de Secciones Aleatorias - Canal {canal.upper()}")
+            fig_fft.update_layout(height=300*len(secciones), width=1000, title_text=f"FFT de Secciones Aleatorias - Canal {canal.upper()}")
             st.plotly_chart(fig_fft)
 
         if canal_seleccionado == 'Todos los canales':
