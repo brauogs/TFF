@@ -130,20 +130,24 @@ def copiar_espectro_al_portapapeles(resultados, canal):
 
 def seleccionar_secciones_aleatorias(datos, fs, num_secciones=5, duracion_seccion=30):
     longitud_seccion = int(duracion_seccion * fs)
-    inicio_maximo = len(datos) - longitud_seccion
+    longitud_datos = len(datos)
     
-    if inicio_maximo <= 0:
-        st.warning("La duración de la sección es mayor que los datos disponibles. Se utilizará toda la serie de datos.")
-        return [(0, len(datos))]
+    if longitud_datos <= longitud_seccion:
+        st.warning("La duración de la sección es mayor o igual que los datos disponibles. Se utilizará toda la serie de datos.")
+        return [(0, longitud_datos)]
     
-    num_secciones = min(num_secciones, inicio_maximo)
+    inicio_maximo = longitud_datos - longitud_seccion
+    num_secciones_posibles = min(num_secciones, inicio_maximo)
     
-    if num_secciones == 0:
+    if num_secciones_posibles == 0:
         st.warning("No hay suficientes datos para seleccionar secciones. Se utilizará toda la serie de datos.")
-        return [(0, len(datos))]
+        return [(0, longitud_datos)]
     
-    indices_inicio = sorted(random.sample(range(inicio_maximo), num_secciones))
-    return [(inicio, min(inicio + longitud_seccion, len(datos))) for inicio in indices_inicio]
+    if num_secciones_posibles < num_secciones:
+        st.warning(f"Solo se pueden seleccionar {num_secciones_posibles} secciones con la duración especificada.")
+    
+    indices_inicio = random.sample(range(inicio_maximo + 1), num_secciones_posibles)
+    return [(inicio, min(inicio + longitud_seccion, longitud_datos)) for inicio in indices_inicio]
 
 def graficar_ratio_y_promedio(resultados, fs, tipo_ratio):
     numerador = 'x' if tipo_ratio == 'X/Z' else 'y'
@@ -216,13 +220,13 @@ if archivo_subido is not None:
             # Graficar secciones seleccionadas
             fig_secciones = go.Figure()
             fig_secciones.add_trace(go.Scatter(x=df[columna_tiempo], 
-                                            y=resultados[canal]['serie_filtrada'], 
-                                            name=f"Señal filtrada {canal.upper()}"))
+                                               y=resultados[canal]['serie_filtrada'], 
+                                               name=f"Señal filtrada {canal.upper()}"))
             for i, (inicio, fin) in enumerate(secciones):
                 fig_secciones.add_trace(go.Scatter(x=df[columna_tiempo].iloc[inicio:fin], 
-                                                y=resultados[canal]['serie_filtrada'][inicio:fin], 
-                                                name=f"Sección {i+1}",
-                                                line=dict(width=3)))
+                                                   y=resultados[canal]['serie_filtrada'][inicio:fin], 
+                                                   name=f"Sección {i+1}",
+                                                   line=dict(width=3)))
             fig_secciones.update_layout(height=400, width=1000, title_text=f"Secciones seleccionadas para FFT - Canal {canal.upper()}")
             st.plotly_chart(fig_secciones)
 
@@ -237,13 +241,6 @@ if archivo_subido is not None:
                 fig_fft.update_yaxes(title_text="Magnitud", row=i+1, col=1)
             fig_fft.update_layout(height=300*len(secciones), width=1000, title_text=f"FFT de Secciones Aleatorias - Canal {canal.upper()}")
             st.plotly_chart(fig_fft)
-
-        if canal_seleccionado == 'Todos los canales':
-            st.subheader("Ratios X/Z e Y/Z con Desviación Estándar")
-            fig_ratio_xz = graficar_ratio_y_promedio(resultados, fs, 'X/Z')
-            st.plotly_chart(fig_ratio_xz)
-            fig_ratio_yz = graficar_ratio_y_promedio(resultados, fs, 'Y/Z')
-            st.plotly_chart(fig_ratio_yz)
 
         # Preparar datos para descargar
         salida = io.StringIO()
