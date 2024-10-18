@@ -186,7 +186,7 @@ archivo_subido = st.file_uploader("Elige un archivo", type="csv")
 
 if archivo_subido is not None:
     df = pd.read_csv(archivo_subido)
-    st.write("Visualizar datos:")
+    st.write("Visualizar datos :")
     st.write(df.head())
 
     # Verificar las columnas existentes
