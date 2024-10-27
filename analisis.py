@@ -14,7 +14,7 @@ import tempfile
 
 # Initialize Firebase
 if not firebase_admin._apps:
-    cred = credentials.Certificate("C:\Users\braug\Desktop\TFF\vibraciones-aac24-firebase-adminsdk-6cx89-96f2ad5ea5.json")
+    cred = credentials.Certificate(r"C:\Users\braug\Desktop\TFF\vibraciones-aac24-firebase-adminsdk-6cx89-96f2ad5ea5.json")
     firebase_admin.initialize_app(cred, {
         'storageBucket': "vibraciones-aac24.appspot.com"
     })
