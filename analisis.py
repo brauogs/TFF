@@ -5,7 +5,7 @@ from scipy import signal
 from scipy.fft import fft
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import firebase_admin
+import firebase_admin 
 from firebase_admin import credentials, auth, storage
 import tempfile
 import json
@@ -63,6 +63,22 @@ def upload_file(file, user_id):
     except Exception as e:
         st.error(f"Error al subir el archivo: {str(e)}")
         return None
+
+# Función para obtener los archivos del usuario
+def get_user_files(user_id):
+    """Obtiene la lista de archivos subidos por el usuario desde Firebase."""
+    try:
+        bucket = storage.bucket()
+        # Obtener todos los blobs (archivos) en la carpeta del usuario
+        blobs = bucket.list_blobs(prefix=f"users/{user_id}/")
+        
+        # Extraer solo los nombres de los archivos
+        user_files = [blob.name.split('/')[-1] for blob in blobs if blob.name != f"users/{user_id}/"]
+        return user_files
+    except Exception as e:
+        st.error(f"Error al obtener los archivos del usuario: {str(e)}")
+        return []
+
 
 # Existing data analysis functions
 def aplicar_filtro_pasabanda(datos, corte_bajo, corte_alto, fs, orden=5):

@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "vibraciones-aac24",
+  "private_key_id": "a2ce0b53538fe01cacce149a92839b2cea3138dc",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCthQ0XLuHaxvDk\ng5Kvimg20aaqK8rNxpnKEXDGGEL0H1QTRPwaNF+ssgtxjlVFfqnf3K9Qv9i2Cfr2\nrKu8wnk+biSb1HpNSZI7Ld0qcLNca8VHzLZiR98VQMFtqvNx++DMNvicUJC6Dv5t\nFwilGGUuQHoHxMvznj+k1JjmPF2XMLsJsEQkS2S6jYgiS1j6iRvg8uFjIVQvTBrG\nOymqRYfv8qKJz0V7rYSz8FrQxb1t0259jKhoJfrCLjmxWZqrjfToeLj+0jeURDdo\nolVQm7usq2Kw0QrgZ0uFyjWdmyh2Lnf5LwLQBW43z7IUt1pxGH3KW5h7a0UpcXVT\nvPwMgyQxAgMBAAECggEAKF9H3bBAh+7YLw7m4vVszG5onPjd8ZVHBHMc3lZYQ6UD\nYo1fK7iqVwvA6l2fvPDc1PNrjfnpEefODrU7qwpDe/FUDra38wIOZjsEVaLNtI/1\noYBBoinPP4pmxt2q0Uc1tUYH/5SmK8gfzeF5VzJPHl0Nl3+kJW1ZKQB3B8CdVPb1\nKCO3OLxgZlXRUO5hhWIhKhF4Phkxd2w5aR4PESPdBAylztAW/gsLMK9mYkCCpsSV\nxdohBzXBTqoqz1JbuHaY3DH6TKgXDh1GhWi6fBtSH5yt9LSWDXWmpRJxBO9+IJpa\nRIKwe7hxQm2c6ovOQzc44qdGVyIL4cI5nKWeIZ2gXQKBgQDdUNPovXeY8pP98Otg\nE8XXNEa6h4NfwRB8e+uIPV2oDzbuXm5Epa1jm65QWmD6kbKI8A900b8Z8s/rV7ED\nZftfsAcz8V2mOmgAQwL/iqRRX+kY261qmX5Z1qmWjykDrlo5xpzdLRyhCm5N1zxj\n7J+aEY6cXgLD4qS102N11zIcFQKBgQDItqam5tpbsPhu8/ql/VhrVOTki41f8KQW\n6YLwMwpDh4Ge/9n4TQDRYb/eHuRf4pnPHH5du/y9L34/SE8GrUrwic8Wi91GqrBH\n8On3oOza+7fso8q80kdiMu9YOOilfYsJmsz97ZqjJg3kDPtr69hrnecA3h7ZF/2k\nuJ4k0zYCrQKBgAQd08M5evcCVBReHdKsq3pkQ4iGqr/mNGtMVsYy9gIBPnFSmlR2\njHIU3DosZC9k9GAtruvqVtahuJJVEDrS88kE2i1yKN7FqVeP54dfSc0lro1C0Mfx\n0PLU1lSxlv61iIIYmqRWiXjJW+HgxgPJy/Iur2tjKEQCfDPRmcEAXrM9AoGAUITN\nmDkWMiBtmX0w+TQIK460AGdngKx192cYCyo+nNaYjmOPWsfxYw32vbHg5gJut6Jz\no0DN5EtQNyzX3xLX9GUkeaQEUdwZudKQ2bFqM3M11q3ioBsvXdqXH+o8kl8pzuGW\nCOwv0/FpMypuFl5XxNxklnmFIIw6ScFyV82PZkUCgYAcLcFwDmaSdD4XOkHsKF/q\nav4oKqKzftInFOUcnULHi0AU4RDOdD0kx/wIBv/YXVd3uxq5ORdygqcXt0lpdZPv\n3q/Xs+7zTBjfMcc0DW4kPmsbgpsAtevAK+aZksWHc7wGyP+cXkejnau6/ybzuoQD\nNwGzdUS9lrmXd66PdFwsAQ==\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-6cx89@vibraciones-aac24.iam.gserviceaccount.com",
+  "client_id": "110547397965348412821",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-6cx89%40vibraciones-aac24.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
