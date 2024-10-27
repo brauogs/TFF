@@ -6,5 +6,4 @@ scipy
 streamlit
 qrcode
 pillow
-firebase-adminpython-dotenv
 firebase-admin
