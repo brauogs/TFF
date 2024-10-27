@@ -13,18 +13,12 @@ import os
 
 st.set_page_config(page_title="Análisis del Acelerograma", layout="wide")
 
+# Obtener credenciales de Firebase desde los secrets de Streamlit Cloud
 def get_firebase_credentials():
-    firebase_secrets = st.secrets["firebase"]
-    if isinstance(firebase_secrets, dict):
-        return firebase_secrets
-    elif isinstance(firebase_secrets, str):
-        try:
-            return json.loads(firebase_secrets)
-        except json.JSONDecodeError:
-            st.error("Error: Las credenciales de Firebase no son un JSON válido.")
-            return None
-    else:
-        st.error("Error: Formato de credenciales de Firebase no reconocido.")
+    try:
+        return dict(st.secrets["firebase"])  # Lee las credenciales desde los secrets en Streamlit Cloud
+    except KeyError:
+        st.error("Error: Las credenciales de Firebase no se encuentran en los secretos de Streamlit.")
         return None
 
 # Inicializar Firebase
@@ -41,25 +35,25 @@ if not firebase_admin._apps:
     else:
         st.error("No se pudieron obtener las credenciales de Firebase.")
 
-# Authentication functions
+# Funciones de autenticación
 def sign_up(email, password):
     try:
         user = auth.create_user(email=email, password=password)
         return user
     except Exception as e:
-        st.error(f"Error during sign up: {str(e)}")
+        st.error(f"Error durante el registro: {str(e)}")
         return None
 
 def sign_in(email, password):
     try:
         user = auth.get_user_by_email(email)
-        # In a real application, you would verify the password here
+        # Aquí se debería verificar la contraseña (esto es solo un ejemplo)
         return user
     except Exception as e:
-        st.error(f"Error during sign in: {str(e)}")
+        st.error(f"Error durante el inicio de sesión: {str(e)}")
         return None
 
-# File storage functions
+# Función para subir archivos al almacenamiento
 def upload_file(file, user_id):
     try:
         bucket = storage.bucket()
@@ -67,17 +61,8 @@ def upload_file(file, user_id):
         blob.upload_from_string(file.getvalue(), content_type=file.type)
         return blob.public_url
     except Exception as e:
-        st.error(f"Error uploading file: {str(e)}")
+        st.error(f"Error al subir el archivo: {str(e)}")
         return None
-
-def get_user_files(user_id):
-    try:
-        bucket = storage.bucket()
-        blobs = bucket.list_blobs(prefix=f"users/{user_id}/")
-        return [blob.name.split('/')[-1] for blob in blobs]
-    except Exception as e:
-        st.error(f"Error retrieving user files: {str(e)}")
-        return []
 
 # Existing data analysis functions
 def aplicar_filtro_pasabanda(datos, corte_bajo, corte_alto, fs, orden=5):
@@ -249,48 +234,48 @@ def graficar_ratio_y_promedio(resultados, fs, tipo_ratio):
                       height=600, width=1000)
     return fig
 
+# Función principal de la aplicación
 def main():
-    
     st.title("Análisis del Acelerograma")
 
-    # Authentication
+    # Autenticación
     if 'user' not in st.session_state:
         st.session_state.user = None
 
     if not st.session_state.user:
-        tab1, tab2 = st.tabs(["Sign In", "Sign Up"])
+        tab1, tab2 = st.tabs(["Iniciar sesión", "Registrarse"])
         
         with tab1:
             email = st.text_input("Email")
-            password = st.text_input("Password", type="password")
-            if st.button("Sign In"):
+            password = st.text_input("Contraseña", type="password")
+            if st.button("Iniciar sesión"):
                 user = sign_in(email, password)
                 if user:
                     st.session_state.user = user
-                    st.success("Signed in successfully!")
+                    st.success("Sesión iniciada con éxito!")
                     st.experimental_rerun()
 
         with tab2:
-            new_email = st.text_input("New Email")
-            new_password = st.text_input("New Password", type="password")
-            if st.button("Sign Up"):
+            new_email = st.text_input("Nuevo Email")
+            new_password = st.text_input("Nueva Contraseña", type="password")
+            if st.button("Registrarse"):
                 user = sign_up(new_email, new_password)
                 if user:
                     st.session_state.user = user
-                    st.success("Signed up successfully!")
+                    st.success("Registrado con éxito!")
                     st.experimental_rerun()
     else:
-        st.write(f"Welcome, {st.session_state.user.email}")
-        if st.button("Sign Out"):
+        st.write(f"Bienvenido, {st.session_state.user.email}")
+        if st.button("Cerrar sesión"):
             st.session_state.user = None
             st.experimental_rerun()
 
-        # File upload and storage
-        uploaded_file = st.file_uploader("Upload a CSV or TXT file", type=["csv", "txt"])
+        # Subir archivo
+        uploaded_file = st.file_uploader("Sube un archivo CSV o TXT", type=["csv", "txt"])
         if uploaded_file:
             file_url = upload_file(uploaded_file, st.session_state.user.uid)
             if file_url:
-                st.success("File uploaded successfully!")
+                st.success("Archivo subido exitosamente!")
 
         # Display user's files
         user_files = get_user_files(st.session_state.user.uid)
