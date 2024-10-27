@@ -1,3 +1,4 @@
+import io
 import random
 import streamlit as st
 import pandas as pd
