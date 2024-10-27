@@ -9,7 +9,7 @@ import io
 import pyperclip
 import random
 import firebase_admin
-from firebase_admin import credentials, auth, storage 
+from firebase_admin import credentials, auth, storage
 import tempfile
 
 # Initialize Firebase
@@ -76,9 +76,157 @@ def calcular_fft(datos, fs):
     magnitudes = 2.0/n * np.abs(resultado_fft[0:n//2])
     return frecuencias, magnitudes
 
-# ... (include all other existing functions here)
+def procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_taper):
+    fs_predeterminada = 100  # Puedes ajustar esto según tus datos o especificaciones del sensor
+    fs = fs_predeterminada  # Inicializamos fs con el valor predeterminado
+    
+    # Verificar si existe una columna de tiempo
+    columnas_tiempo = ['marca_tiempo', 'timestamp', 'tiempo']
+    columna_tiempo = next((col for col in columnas_tiempo if col in df.columns), None)
+    
+    if columna_tiempo:
+        try:
+            # Intenta convertir la columna de tiempo a datetime
+            df[columna_tiempo] = pd.to_datetime(df[columna_tiempo], errors='coerce')
+            
+            # Verifica si hay valores NaT (Not a Time) después de la conversión
+            if df[columna_tiempo].isnull().any():
+                st.warning(f"Algunos valores en la columna {columna_tiempo} no pudieron ser convertidos a fechas. Se usará un índice numérico en su lugar.")
+                df[columna_tiempo] = pd.to_numeric(df.index)
+            else:
+                # Calcula la diferencia de tiempo si la conversión fue exitosa
+                diferencia_tiempo = (df[columna_tiempo].iloc[1] - df[columna_tiempo].iloc[0]).total_seconds()
+                if diferencia_tiempo > 0:
+                    fs = 1 / diferencia_tiempo
+        except Exception as e:
+            st.warning(f"Error al procesar la columna de tiempo: {str(e)}. Se usará un índice numérico en su lugar.")
+            df[columna_tiempo] = pd.to_numeric(df.index)
+    else:
+        # Si no hay columna de tiempo, usamos el índice como tiempo
+        st.warning("No se encontró una columna de tiempo válida. Se usará el índice como tiempo.")
+        df['tiempo'] = pd.to_numeric(df.index)
+        columna_tiempo = 'tiempo'
 
-# Main Streamlit app
+    st.info(f"Frecuencia de muestreo utilizada: {fs} Hz")
+
+    resultados = {}
+    for canal in canales:
+        # Aplicar filtro pasabanda
+        datos_filtrados = aplicar_filtro_pasabanda(df[canal], corte_bajo=corte_bajo, corte_alto=corte_alto, fs=fs)
+        
+        # Aplicar taper
+        datos_con_taper = aplicar_taper(datos_filtrados, porcentaje=porcentaje_taper)
+        
+        # Calcular FFT
+        frecuencias, magnitudes = calcular_fft(datos_con_taper, fs)
+        
+        resultados[canal] = {
+            'serie_tiempo': df[canal],
+            'serie_filtrada': datos_con_taper,
+            'frecuencias_fft': frecuencias,
+            'magnitudes_fft': magnitudes
+        }
+    
+    return resultados, fs, columna_tiempo
+
+def graficar_resultados(resultados, fs, canales):
+    if len(canales) == 1:
+        canal = canales[0]
+        fig = make_subplots(rows=2, cols=2, subplot_titles=(
+            f"Canal {canal.upper()} (Original)",
+            f"Canal {canal.upper()} (Filtrado)",
+            f"Canal {canal.upper()} FFT",
+            "Secciones seleccionadas para FFT"))
+
+        tiempo = np.arange(len(resultados[canal]['serie_tiempo'])) / fs
+
+        fig.add_trace(go.Scatter(x=tiempo, y=resultados[canal]['serie_tiempo'], name="Original"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=tiempo, y=resultados[canal]['serie_filtrada'], name="Filtrado"), row=1, col=2)
+        
+        # Centrar el gráfico FFT en los datos importantes
+        frecuencias_fft = resultados[canal]['frecuencias_fft']
+        magnitudes_fft = resultados[canal]['magnitudes_fft']
+        indice_freq_max = np.argmax(magnitudes_fft)
+        indice_inicio = max(0, indice_freq_max - 100)
+        indice_fin = min(len(frecuencias_fft), indice_freq_max + 100)
+        
+        fig.add_trace(go.Scatter(x=frecuencias_fft[indice_inicio:indice_fin], 
+                                 y=magnitudes_fft[indice_inicio:indice_fin], 
+                                 name="FFT"), row=2, col=1)
+    else:
+        fig = make_subplots(rows=3, cols=1, subplot_titles=(
+            "Canales Originales",
+            "Canales Filtrados",
+            "FFT de los Canales"))
+
+        tiempo = np.arange(len(resultados['x']['serie_tiempo'])) / fs
+
+        for i, canal in enumerate(canales):
+            fig.add_trace(go.Scatter(x=tiempo, y=resultados[canal]['serie_tiempo'], name=f"{canal.upper()} Original"), row=1, col=1)
+            fig.add_trace(go.Scatter(x=tiempo, y=resultados[canal]['serie_filtrada'], name=f"{canal.upper()} Filtrado"), row=2, col=1)
+            fig.add_trace(go.Scatter(x=resultados[canal]['frecuencias_fft'], y=resultados[canal]['magnitudes_fft'], name=f"{canal.upper()} FFT"), row=3, col=1)
+
+    fig.update_layout(height=1000, width=1000, title_text="Análisis de Canales")
+    return fig
+
+def copiar_espectro_al_portapapeles(resultados, canal):
+    frecuencias = resultados[canal]['frecuencias_fft']
+    magnitudes = resultados[canal]['magnitudes_fft']
+    espectro_str = 'Frecuencia (Hz), Magnitud\n'
+    espectro_str += '\n'.join([f'{freq},{mag}' for freq, mag in zip(frecuencias, magnitudes)])
+    pyperclip.copy(espectro_str)
+    st.success(f"Espectro de Fourier del canal {canal.upper()} copiado al portapapeles")
+
+def seleccionar_secciones_aleatorias(datos, fs, num_secciones=5, duracion_seccion=30):
+    longitud_seccion = int(duracion_seccion * fs)
+    longitud_datos = len(datos)
+    
+    if longitud_datos <= longitud_seccion:
+        st.warning("La duración de la sección es mayor o igual que los datos disponibles. Se utilizará toda la serie de datos.")
+        return [(0, longitud_datos)]
+    
+    inicio_maximo = longitud_datos - longitud_seccion
+    num_secciones_posibles = min(num_secciones, inicio_maximo)
+    
+    if num_secciones_posibles == 0:
+        st.warning("No hay suficientes datos para seleccionar secciones. Se utilizará toda la serie de datos.")
+        return [(0, longitud_datos)]
+    
+    if num_secciones_posibles < num_secciones:
+        st.warning(f"Solo se pueden seleccionar {num_secciones_posibles} secciones con la duración especificada.")
+    
+    indices_inicio = random.sample(range(inicio_maximo + 1), num_secciones_posibles)
+    return [(inicio, min(inicio + longitud_seccion, longitud_datos)) for inicio in indices_inicio]
+
+def graficar_ratio_y_promedio(resultados, fs, tipo_ratio):
+    numerador = 'x' if tipo_ratio == 'X/Z' else 'y'
+    denominador = 'z'
+    
+    ratio = resultados[numerador]['magnitudes_fft'] / resultados[denominador]['magnitudes_fft']
+    frecuencias = resultados[numerador]['frecuencias_fft']
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=frecuencias, y=ratio, name=f'Ratio {tipo_ratio}', line=dict(color='blue')))
+    
+    # Calcular y graficar el promedio móvil
+    tamano_ventana = 10
+    promedio_movil = np.convolve(ratio, np.ones(tamano_ventana)/tamano_ventana, mode='valid')
+    fig.add_trace(go.Scatter(x=frecuencias[tamano_ventana-1:], y=promedio_movil, 
+                             name=f'Promedio {tipo_ratio}', line=dict(color='red')))
+    
+    # Calcular y graficar la desviación estándar
+    desviacion_estandar = np.std(ratio)
+    fig.add_trace(go.Scatter(x=frecuencias, y=np.ones_like(frecuencias) * (np.mean(ratio) + desviacion_estandar),
+                             name='Desviación Estándar Superior', line=dict(color='green', dash='dot')))
+    fig.add_trace(go.Scatter(x=frecuencias, y=np.ones_like(frecuencias) * (np.mean(ratio) - desviacion_estandar),
+                             name='Desviación Estándar Inferior', line=dict(color='green', dash='dot')))
+    
+    fig.update_layout(title=f'Ratio {tipo_ratio}, Promedio y Desviación Estándar',
+                      xaxis_title='Frecuencia (Hz)',
+                      yaxis_title='Ratio',
+                      height=600, width=1000)
+    return fig
+
 def main():
     st.set_page_config(page_title="Análisis del Acelerograma", layout="wide")
     st.title("Análisis del Acelerograma")
