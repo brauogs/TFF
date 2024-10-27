@@ -8,16 +8,37 @@ from plotly.subplots import make_subplots
 import firebase_admin
 from firebase_admin import credentials, auth, storage
 import tempfile
+import json
 import os
 
 
+def get_firebase_credentials():
+    firebase_secrets = st.secrets["firebase"]
+    if isinstance(firebase_secrets, dict):
+        return firebase_secrets
+    elif isinstance(firebase_secrets, str):
+        try:
+            return json.loads(firebase_secrets)
+        except json.JSONDecodeError:
+            st.error("Error: Las credenciales de Firebase no son un JSON válido.")
+            return None
+    else:
+        st.error("Error: Formato de credenciales de Firebase no reconocido.")
+        return None
+
 # Inicializar Firebase
 if not firebase_admin._apps:
-    # Usar st.secrets para acceder a las credenciales
-    cred = credentials.Certificate(st.secrets["firebase"])
-    firebase_admin.initialize_app(cred, {
-        'storageBucket': "vibraciones-aac24.appspot.com"
-    })
+    firebase_cred = get_firebase_credentials()
+    if firebase_cred:
+        try:
+            cred = credentials.Certificate(firebase_cred)
+            firebase_admin.initialize_app(cred, {
+                'storageBucket': "vibraciones-aac24.appspot.com"
+            })
+        except ValueError as e:
+            st.error(f"Error al inicializar Firebase: {str(e)}")
+    else:
+        st.error("No se pudieron obtener las credenciales de Firebase.")
 
 # Authentication functions
 def sign_up(email, password):
