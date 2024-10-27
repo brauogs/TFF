@@ -11,6 +11,7 @@ import tempfile
 import json
 import os
 
+st.set_page_config(page_title="Análisis del Acelerograma", layout="wide")
 
 def get_firebase_credentials():
     firebase_secrets = st.secrets["firebase"]
@@ -249,7 +250,7 @@ def graficar_ratio_y_promedio(resultados, fs, tipo_ratio):
     return fig
 
 def main():
-    st.set_page_config(page_title="Análisis del Acelerograma", layout="wide")
+    
     st.title("Análisis del Acelerograma")
 
     # Authentication
