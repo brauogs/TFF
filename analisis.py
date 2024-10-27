@@ -5,16 +5,16 @@ from scipy import signal
 from scipy.fft import fft
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import io
-import pyperclip
-import random
 import firebase_admin
 from firebase_admin import credentials, auth, storage
 import tempfile
+import os
 
-# Initialize Firebase
+
+# Inicializar Firebase
 if not firebase_admin._apps:
-    cred = credentials.Certificate(r"C:\Users\braug\Desktop\TFF\vibraciones-aac24-firebase-adminsdk-6cx89-96f2ad5ea5.json")
+    # Usar st.secrets para acceder a las credenciales
+    cred = credentials.Certificate(st.secrets["firebase"])
     firebase_admin.initialize_app(cred, {
         'storageBucket': "vibraciones-aac24.appspot.com"
     })
