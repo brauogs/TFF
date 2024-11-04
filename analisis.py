@@ -192,7 +192,29 @@ def graficar_resultados(resultados, fs, canales):
             fig.add_trace(go.Scatter(x=resultados[canal]['frecuencias_fft'], y=resultados[canal]['magnitudes_fft'], name=f"{canal.upper()} FFT"), row=3, col=1)
 
     fig.update_layout(height=1000, width=1000, title_text="Análisis de Canales")
+    
+                # Add a map to the figure
+    fig.add_trace(go.Scattermapbox(
+        lat=[latitude],
+        lon=[longitude],
+        mode='markers',
+        marker=go.scattermapbox.Marker(size=14),
+        text="Ubicación de la grabación",
+    ))
+                
+    fig.update_layout(
+        mapbox_style="open-street-map",
+        mapbox=dict(
+            center=dict(lat=latitude, lon=longitude),
+            zoom=10
+        )
+    )
+    # Call the updated function
+    fig = graficar_resultados(resultados, fs, canales, df['latitude'].iloc[0], df['longitude'].iloc[0])
+    st.plotly_chart(fig)                
     return fig
+
+
 
 def copiar_espectro_al_portapapeles(resultados, canal):
     frecuencias = resultados[canal]['frecuencias_fft']
