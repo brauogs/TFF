@@ -271,7 +271,7 @@ def main():
                 if user:
                     st.session_state.user = user
                     st.success("Sesión iniciada con éxito!")
-                    st.experimental_rerun()
+                    st.rerun()
 
         with tab2:
             new_email = st.text_input("Nuevo Email")
@@ -281,12 +281,12 @@ def main():
                 if user:
                     st.session_state.user = user
                     st.success("Registrado con éxito!")
-                    st.experimental_rerun()
+                    st.rerun()
     else:
         st.write(f"Bienvenido, {st.session_state.user.email}")
         if st.button("Cerrar sesión"):
             st.session_state.user = None
-            st.experimental_rerun()
+            st.rerun()
 
         # Subir archivo
         uploaded_file = st.file_uploader("Sube un archivo CSV o TXT", type=["csv", "txt"])
