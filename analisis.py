@@ -46,7 +46,7 @@ def handle_iphone_accelerometer():
     flask_thread.start()
 
     st.write("Waiting for iPhone connection...")
-    st.write("Make sure your iPhone is sending data to: http://[Your_Computer_IP]:5000/accelerometer")
+    st.write("Make sure your iPhone is sending data to: http://192.168.100.155:5000/accelerometer")
 
     plot_placeholder = st.empty()
 
