@@ -7,3 +7,4 @@ streamlit
 qrcode
 pillow
 firebase-admin
+flask
