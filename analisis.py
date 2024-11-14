@@ -21,7 +21,6 @@ st.set_page_config(page_title="Análisis del Acelerograma", layout="wide")
 
 
 
-# New function to handle real-time iPhone accelerometer data
 def handle_iphone_accelerometer():
     app = Flask(__name__)
 
@@ -69,7 +68,8 @@ def handle_iphone_accelerometer():
                 height=600
             )
 
-            plot_placeholder.plotly_chart(fig, use_container_width=True)
+            # Add a unique key to the plotly_chart
+            plot_placeholder.plotly_chart(fig, use_container_width=True, key=f"accelerometer_plot_{time.time()}")
             status_placeholder.text(f"Last update: {df['time'].iloc[-1] if len(df) > 0 else 'No data yet'}")
 
             time.sleep(0.1)
@@ -77,7 +77,6 @@ def handle_iphone_accelerometer():
         st.error(f"An error occurred: {str(e)}")
     finally:
         flask_thread.join(timeout=1)
-
 
 
 # Obtener credenciales de Firebase desde los secrets de Streamlit Cloud
