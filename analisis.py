@@ -41,7 +41,7 @@ def handle_iphone_accelerometer():
         return jsonify({"status": "success"}), 200
 
     def run_flask():
-        app.run(host='0.0.0.0', port=5000)
+        app.run(host='0.0.0.0', port=8080)
 
     flask_thread = Thread(target=run_flask)
     flask_thread.start()
