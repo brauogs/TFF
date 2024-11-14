@@ -19,6 +19,8 @@ from collections import deque
 
 st.set_page_config(page_title="Análisis del Acelerograma", layout="wide")
 
+
+
 # New function to handle real-time iPhone accelerometer data
 def handle_iphone_accelerometer():
     app = Flask(__name__)
@@ -49,25 +51,32 @@ def handle_iphone_accelerometer():
     st.write("Make sure your iPhone is sending data to: http://192.168.100.155:5000/acelerometro.html")
 
     plot_placeholder = st.empty()
+    status_placeholder = st.empty()
 
-    while True:
-        df = pd.DataFrame(accelerometer_data)
+    try:
+        while True:
+            df = pd.DataFrame(accelerometer_data)
 
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df['time'], y=df['x'], mode='lines', name='X'))
-        fig.add_trace(go.Scatter(x=df['time'], y=df['y'], mode='lines', name='Y'))
-        fig.add_trace(go.Scatter(x=df['time'], y=df['z'], mode='lines', name='Z'))
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=df['time'], y=df['x'], mode='lines', name='X'))
+            fig.add_trace(go.Scatter(x=df['time'], y=df['y'], mode='lines', name='Y'))
+            fig.add_trace(go.Scatter(x=df['time'], y=df['z'], mode='lines', name='Z'))
 
-        fig.update_layout(
-            title='Real-time iPhone Accelerometer Data',
-            xaxis_title='Time',
-            yaxis_title='Acceleration (m/s²)',
-            height=600
-        )
+            fig.update_layout(
+                title='Real-time iPhone Accelerometer Data',
+                xaxis_title='Time',
+                yaxis_title='Acceleration (m/s²)',
+                height=600
+            )
 
-        plot_placeholder.plotly_chart(fig, use_container_width=True)
+            plot_placeholder.plotly_chart(fig, use_container_width=True)
+            status_placeholder.text(f"Last update: {df['time'].iloc[-1] if len(df) > 0 else 'No data yet'}")
 
-        time.sleep(0.1)
+            time.sleep(0.1)
+    except Exception as e:
+        st.error(f"An error occurred: {str(e)}")
+    finally:
+        flask_thread.join(timeout=1)
 
 
 
