@@ -19,8 +19,12 @@ from collections import deque
 
 st.set_page_config(page_title="Análisis del Acelerograma", layout="wide")
 
+# Detecta el tipo de dispositivo al que está conectado.
+def detect_device():
+    user_agent = st.experimental_get_query_params().get('user_agent', [''])[0]
+    return 'iOS' if 'iPhone' in user_agent else 'Web'
 
-
+# Modified handle_iphone_accelerometer function
 def handle_iphone_accelerometer():
     app = Flask(__name__)
 
@@ -47,7 +51,7 @@ def handle_iphone_accelerometer():
     flask_thread.start()
 
     st.write("Waiting for iPhone connection...")
-    st.write("Make sure your iPhone is sending data to: http://192.168.100.155:5000/acelerometro.html")
+    st.write("Make sure your iPhone is sending data to: http://[YOUR_SERVER_IP]:8080/accelerometer")
 
     plot_placeholder = st.empty()
     status_placeholder = st.empty()
@@ -68,7 +72,6 @@ def handle_iphone_accelerometer():
                 height=600
             )
 
-            # Add a unique key to the plotly_chart
             plot_placeholder.plotly_chart(fig, use_container_width=True, key=f"accelerometer_plot_{time.time()}")
             status_placeholder.text(f"Last update: {df['time'].iloc[-1] if len(df) > 0 else 'No data yet'}")
 
@@ -316,11 +319,28 @@ def graficar_ratio_y_promedio(resultados, fs, tipo_ratio):
                       height=600, width=1000)
     return fig
 
-# Función principal de la aplicación
+
 def main():
     st.title("Análisis del Acelerograma")
 
-    # Autenticación
+    # Initialize Firebase
+    if not firebase_admin._apps:
+        firebase_cred = get_firebase_credentials()
+        if firebase_cred:
+            try:
+                cred = credentials.Certificate(firebase_cred)
+                firebase_admin.initialize_app(cred, {
+                    'storageBucket': "vibraciones-aac24.appspot.com"
+                })
+            except ValueError as e:
+                st.error(f"Error al inicializar Firebase: {str(e)}")
+        else:
+            st.error("No se pudieron obtener las credenciales de Firebase.")
+
+    # Detect device type
+    device_type = detect_device()
+
+    # Authentication
     if 'user' not in st.session_state:
         st.session_state.user = None
 
@@ -352,125 +372,143 @@ def main():
             st.session_state.user = None
             st.rerun()
 
-        # Opción para seleccionar la fuente de datos
-        data_source = st.radio("Seleccione la fuente de datos:", ["Archivo subido", "Datos en tiempo real del iPhone"])
+        if device_type == 'iOS':
+            st.write("Bienvenido, usuario de iOS. Los datos del acelerómetro se están recopilando.")
+            st.write("Por favor, asegúrese de que la aplicación React Native esté ejecutándose y enviando datos.")
+            
+            # Display instructions for the iOS user
+            st.markdown("""
+            ### Instrucciones para usuarios de iOS:
+            1. Asegúrese de que la aplicación React Native esté instalada en su iPhone.
+            2. Abra la aplicación y presione el botón 'Start Sending' para comenzar a enviar datos.
+            3. Los datos se enviarán automáticamente a nuestro servidor.
+            4. Puede ver los datos en tiempo real accediendo a esta aplicación desde un navegador web.
+            """)
+            
+            # You might want to add a placeholder here to show when data starts coming in
+            data_placeholder = st.empty()
+            data_placeholder.text("Esperando datos del acelerómetro...")
+        elif device_type == 'Web':
+            st.write("Bienvenido, usuario web. Puedes ver los datos del acelerómetro del iPhone aquí.")
+            
+            # Option to select data source
+            data_source = st.radio("Seleccione la fuente de datos:", ["Archivo subido", "Datos en tiempo real del iPhone"])
 
-        if data_source == "Archivo subido":
-            # Subir archivo
-            uploaded_file = st.file_uploader("Sube un archivo CSV o TXT", type=["csv", "txt"])
-            if uploaded_file:
-                file_url = upload_file(uploaded_file, st.session_state.user.uid)
-                if file_url:
-                    st.success("Archivo subido exitosamente!")
+            if data_source == "Archivo subido":
+                # File upload and analysis code
+                uploaded_file = st.file_uploader("Sube un archivo CSV o TXT", type=["csv", "txt"])
+                if uploaded_file:
+                    file_url = upload_file(uploaded_file, st.session_state.user.uid)
+                    if file_url:
+                        st.success("Archivo subido exitosamente!")
 
-            # Display user's files
-            user_files = get_user_files(st.session_state.user.uid)
-            selected_file = st.selectbox("Select a file for analysis", user_files)
+                # Display user's files
+                user_files = get_user_files(st.session_state.user.uid)
+                selected_file = st.selectbox("Select a file for analysis", user_files)
 
-            if selected_file:
-                # Download the selected file
-                bucket = storage.bucket()
-                blob = bucket.blob(f"users/{st.session_state.user.uid}/{selected_file}")
-                _, temp_local_filename = tempfile.mkstemp()
-                blob.download_to_filename(temp_local_filename)
+                if selected_file:
+                    # Download the selected file
+                    bucket = storage.bucket()
+                    blob = bucket.blob(f"users/{st.session_state.user.uid}/{selected_file}")
+                    _, temp_local_filename = tempfile.mkstemp()
+                    blob.download_to_filename(temp_local_filename)
 
-                # Read the file
-                df = pd.read_csv(temp_local_filename)
-                os.remove(temp_local_filename)  # Clean up the temp file
+                    # Read the file
+                    df = pd.read_csv(temp_local_filename)
+                    os.remove(temp_local_filename)  # Clean up the temp file
 
-                # Existing data analysis code
-                st.write("Visualizar datos:")
-                st.write(df.head())
+                    # Data analysis code
+                    st.write("Visualizar datos:")
+                    st.write(df.head())
 
-                columnas_existentes = df.columns.tolist()
-                st.write("Columnas en el archivo:", columnas_existentes)
+                    columnas_existentes = df.columns.tolist()
+                    st.write("Columnas en el archivo:", columnas_existentes)
 
-                opciones_canal = ['x', 'y', 'z', 'Todos los canales']
-                canal_seleccionado = st.selectbox("Selecciona el canal a analizar", opciones_canal)
+                    opciones_canal = ['x', 'y', 'z', 'Todos los canales']
+                    canal_seleccionado = st.selectbox("Selecciona el canal a analizar", opciones_canal)
 
-                st.sidebar.header("Parámetros de filtrado")
-                corte_bajo = st.sidebar.slider("Fmin (Hz)", 0.1, 10.0, 0.1, 0.1)
-                corte_alto = st.sidebar.slider("Fmax (Hz)", 1.0, 50.0, 10.0, 0.1)
-                porcentaje_taper = st.sidebar.slider("Taper (%)", 1, 20, 5, 1)
+                    st.sidebar.header("Parámetros de filtrado")
+                    corte_bajo = st.sidebar.slider("Fmin (Hz)", 0.1, 10.0, 0.1, 0.1)
+                    corte_alto = st.sidebar.slider("Fmax (Hz)", 1.0, 50.0, 10.0, 0.1)
+                    porcentaje_taper = st.sidebar.slider("Taper (%)", 1, 20, 5, 1)
 
-                num_rutinas_fft = st.number_input("Número de rutinas FFT a realizar", min_value=1, max_value=10, value=5)
+                    num_rutinas_fft = st.number_input("Número de rutinas FFT a realizar", min_value=1, max_value=10, value=5)
 
-                if st.button("Analizar datos"):
-                    canales = ['x', 'y', 'z'] if canal_seleccionado == 'Todos los canales' else [canal_seleccionado]
-                    resultados, fs, columna_tiempo = procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_taper)
-                    fig = graficar_resultados(resultados, fs, canales)
-                    st.plotly_chart(fig)
+                    if st.button("Analizar datos"):
+                        canales = ['x', 'y', 'z'] if canal_seleccionado == 'Todos los canales' else [canal_seleccionado]
+                        resultados, fs, columna_tiempo = procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_taper)
+                        fig = graficar_resultados(resultados, fs, canales)
+                        st.plotly_chart(fig)
 
-                    if canal_seleccionado != 'Todos los canales':
-                        if st.button(f'Copiar el espectro de Fourier del canal {canal_seleccionado.upper()} al portapapeles'):
-                            copiar_espectro_al_portapapeles(resultados, canal_seleccionado)
+                        if canal_seleccionado != 'Todos los canales':
+                            if st.button(f'Copiar el espectro de Fourier del canal {canal_seleccionado.upper()} al portapapeles'):
+                                copiar_espectro_al_portapapeles(resultados, canal_seleccionado)
 
-                    st.subheader(f"Rutinas FFT en secciones aleatorias")
-                    for canal in canales:
-                        secciones = seleccionar_secciones_aleatorias(resultados[canal]['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
-                        
-                        # Graficar secciones seleccionadas
-                        fig_secciones = go.Figure()
-                        fig_secciones.add_trace(go.Scatter(x=df[columna_tiempo], 
-                                                        y=resultados[canal]['serie_filtrada'], 
-                                                        name=f"Señal filtrada {canal.upper()}"))
-                        for i, (inicio, fin) in enumerate(secciones):
-                            fig_secciones.add_trace(go.Scatter(x=df[columna_tiempo].iloc[inicio:fin], 
-                                                            y=resultados[canal]['serie_filtrada'][inicio:fin], 
-                                                            name=f"Sección {i+1}",
-                                                            line=dict(width=3)))
-                        fig_secciones.update_layout(height=400, width=1000, title_text=f"Secciones seleccionadas para FFT - Canal {canal.upper()}")
-                        st.plotly_chart(fig_secciones)
+                        st.subheader(f"Rutinas FFT en secciones aleatorias")
+                        for canal in canales:
+                            secciones = seleccionar_secciones_aleatorias(resultados[canal]['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
+                            
+                            # Graficar secciones seleccionadas
+                            fig_secciones = go.Figure()
+                            fig_secciones.add_trace(go.Scatter(x=df[columna_tiempo], 
+                                                            y=resultados[canal]['serie_filtrada'], 
+                                                            name=f"Señal filtrada {canal.upper()}"))
+                            for i, (inicio, fin) in enumerate(secciones):
+                                fig_secciones.add_trace(go.Scatter(x=df[columna_tiempo].iloc[inicio:fin], 
+                                                                y=resultados[canal]['serie_filtrada'][inicio:fin], 
+                                                                name=f"Sección {i+1}",
+                                                                line=dict(width=3)))
+                            fig_secciones.update_layout(height=400, width=1000, title_text=f"Secciones seleccionadas para FFT - Canal {canal.upper()}")
+                            st.plotly_chart(fig_secciones)
 
-                        # Calcular y graficar FFT para cada sección
-                        fig_fft = make_subplots(rows=len(secciones), cols=1, 
-                                                subplot_titles=[f"FFT Sección {i+1}" for i in range(len(secciones))])
-                        for i, (inicio, fin) in enumerate(secciones):
-                            datos_seccion = resultados[canal]['serie_filtrada'][inicio:fin]
-                            frecuencias, magnitudes = calcular_fft(datos_seccion, fs)
-                            fig_fft.add_trace(go.Scatter(x=frecuencias, y=magnitudes, name=f"FFT Sección {i+1}"), row=i+1, col=1)
-                            fig_fft.update_xaxes(title_text="Frecuencia (Hz)", row=i+1, col=1)
-                            fig_fft.update_yaxes(title_text="Magnitud", row=i+1, col=1)
-                        fig_fft.update_layout(height=300*len(secciones), width=1000, title_text=f"FFT de Secciones Aleatorias - Canal {canal.upper()}")
-                        st.plotly_chart(fig_fft)
+                            # Calcular y graficar FFT para cada sección
+                            fig_fft = make_subplots(rows=len(secciones), cols=1, 
+                                                    subplot_titles=[f"FFT Sección {i+1}" for i in range(len(secciones))])
+                            for i, (inicio, fin) in enumerate(secciones):
+                                datos_seccion = resultados[canal]['serie_filtrada'][inicio:fin]
+                                frecuencias, magnitudes = calcular_fft(datos_seccion, fs)
+                                fig_fft.add_trace(go.Scatter(x=frecuencias, y=magnitudes, name=f"FFT Sección {i+1}"), row=i+1, col=1)
+                                fig_fft.update_xaxes(title_text="Frecuencia (Hz)", row=i+1, col=1)
+                                fig_fft.update_yaxes(title_text="Magnitud", row=i+1, col=1)
+                            fig_fft.update_layout(height=300*len(secciones), width=1000, title_text=f"FFT de Secciones Aleatorias - Canal {canal.upper()}")
+                            st.plotly_chart(fig_fft)
 
-                    # Preparar datos para descargar
-                    salida = io.StringIO()
-                    datos_para_csv = {columna_tiempo: df[columna_tiempo]}
-                    longitud_maxima = len(datos_para_csv[columna_tiempo])
+                        # Preparar datos para descargar
+                        salida = io.StringIO()
+                        datos_para_csv = {columna_tiempo: df[columna_tiempo]}
+                        longitud_maxima = len(datos_para_csv[columna_tiempo])
 
-                    for canal in canales:
-                        # Asegurar que todos los arrays tengan la misma longitud rellenando con valores NaN
-                        serie_tiempo = np.pad(resultados[canal]['serie_tiempo'], (0, longitud_maxima - len(resultados[canal]['serie_tiempo'])), mode='constant', constant_values=np.nan)
-                        serie_filtrada = np.pad(resultados[canal]['serie_filtrada'], (0, longitud_maxima - len(resultados[canal]['serie_filtrada'])), mode='constant', constant_values=np.nan)
-                        frecuencias_fft = np.pad(resultados[canal]['frecuencias_fft'], (0, longitud_maxima - len(resultados[canal]['frecuencias_fft'])), mode='constant', constant_values=np.nan)
-                        magnitudes_fft = np.pad(resultados[canal]['magnitudes_fft'], (0, longitud_maxima - len(resultados[canal]['magnitudes_fft'])), mode='constant', constant_values=np.nan)
-                        
-                        datos_para_csv.update({
-                            f'{canal}_original': serie_tiempo,
-                            f'{canal}_filtrado': serie_filtrada,
-                            f'{canal}_frecuencia_fft': frecuencias_fft,
-                            f'{canal}_magnitud_fft': magnitudes_fft
-                        })
+                        for canal in canales:
+                            # Asegurar que todos los arrays tengan la misma longitud rellenando con valores NaN
+                            serie_tiempo = np.pad(resultados[canal]['serie_tiempo'], (0, longitud_maxima - len(resultados[canal]['serie_tiempo'])), mode='constant', constant_values=np.nan)
+                            serie_filtrada = np.pad(resultados[canal]['serie_filtrada'], (0, longitud_maxima - len(resultados[canal]['serie_filtrada'])), mode='constant', constant_values=np.nan)
+                            frecuencias_fft = np.pad(resultados[canal]['frecuencias_fft'], (0, longitud_maxima - len(resultados[canal]['frecuencias_fft'])), mode='constant', constant_values=np.nan)
+                            magnitudes_fft = np.pad(resultados[canal]['magnitudes_fft'], (0, longitud_maxima - len(resultados[canal]['magnitudes_fft'])), mode='constant', constant_values=np.nan)
+                            
+                            datos_para_csv.update({
+                                f'{canal}_original': serie_tiempo,
+                                f'{canal}_filtrado': serie_filtrada,
+                                f'{canal}_frecuencia_fft': frecuencias_fft,
+                                f'{canal}_magnitud_fft': magnitudes_fft
+                            })
 
-                    # Crear DataFrame y guardar como CSV
-                    df_para_csv = pd.DataFrame(datos_para_csv)
-                    df_para_csv.to_csv(salida, index=False)
+                        # Crear DataFrame y guardar como CSV
+                        df_para_csv = pd.DataFrame(datos_para_csv)
+                        df_para_csv.to_csv(salida, index=False)
 
-                    st.download_button(
-                        label="Descargar datos procesados",
-                        data=salida.getvalue(),
-                        file_name="datos_procesados.csv",
-                        mime="text/csv"
-                    )
-                else:
-                    st.write("Sube un archivo CSV.")
+                        st.download_button(
+                            label="Descargar datos procesados",
+                            data=salida.getvalue(),
+                            file_name="datos_procesados.csv",
+                            mime="text/csv"
+                        )
 
-        elif data_source == "Datos en tiempo real del iPhone":
-            st.write("Conecte su iPhone y presione el botón para iniciar la captura de datos en tiempo real.")
-            if st.button("Iniciar captura de datos en tiempo real"):
-                handle_iphone_accelerometer()
+            elif data_source == "Datos en tiempo real del iPhone":
+                st.write("Conecte su iPhone y presione el botón para iniciar la captura de datos en tiempo real.")
+                if st.button("Iniciar captura de datos en tiempo real"):
+                    handle_iphone_accelerometer()
 
+    # Sidebar instructions
     st.sidebar.header("Instrucciones")
     st.sidebar.markdown("""
     1. Sign in or create an account.
@@ -487,6 +525,8 @@ def main():
        - Click 'Iniciar captura de datos en tiempo real'.
        - Ensure your iPhone is connected and sending data.
     """)
+
+
 
 if __name__ == "__main__":
     main()
