@@ -8,3 +8,4 @@ qrcode
 pillow
 firebase-admin
 flask
+streamlit-autorefresh
