@@ -21,7 +21,7 @@ st.set_page_config(page_title="Análisis del Acelerograma", layout="wide")
 
 # Detecta el tipo de dispositivo al que está conectado.
 def detect_device():
-    user_agent = st.experimental_get_query_params().get('user_agent', [''])[0]
+    user_agent = st.query_params.get('user_agent', [''])[0]
     return 'iOS' if 'iPhone' in user_agent else 'Web'
 
 def handle_iphone_accelerometer(ip_address):
