@@ -128,7 +128,7 @@ def upload_file(file, user_id):
         st.error(f"Error al subir el archivo: {str(e)}")
         return None
 
-# Función para obtener los archivos del usuario
+
 def get_user_files(user_id):
     """Obtiene la lista de archivos subidos por el usuario desde Firebase."""
     try:
