@@ -19,14 +19,12 @@ from collections import deque
 
 st.set_page_config(page_title="Análisis del Acelerograma", layout="wide")
 
-# Detecta el tipo de dispositivo al que está conectado.
 def detect_device():
     user_agent = st.query_params.get('user_agent', [''])[0]
     return 'iOS' if 'iPhone' in user_agent else 'Web'
 
 def handle_iphone_accelerometer(ip_address):
     app = Flask(__name__)
-
     accelerometer_data = {
         'x': deque(maxlen=100),
         'y': deque(maxlen=100),
@@ -53,7 +51,6 @@ def handle_iphone_accelerometer(ip_address):
     st.write(f"Waiting for iPhone connection...")
     st.write(f"Make sure your iPhone is sending data to: http://{ip_address}:8501/accelerometer")
 
-    # Placeholder for real-time data display
     chart = st.line_chart(pd.DataFrame(columns=['x', 'y', 'z']))
 
     while True:
@@ -68,24 +65,21 @@ def handle_iphone_accelerometer(ip_address):
 
 def get_local_ip():
     try:
-        # This creates a UDP socket (doesn't actually connect to anything)
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))  # Connecting to a Google DNS server
+        s.connect(("8.8.8.8", 80))
         local_ip = s.getsockname()[0]
         s.close()
         return local_ip
     except Exception:
         return None
 
-# Obtener credenciales de Firebase desde los secrets de Streamlit Cloud
 def get_firebase_credentials():
     try:
-        return dict(st.secrets["firebase"])  # Lee las credenciales desde los secrets en Streamlit Cloud
+        return dict(st.secrets["firebase"])
     except KeyError:
         st.error("Error: Las credenciales de Firebase no se encuentran en los secretos de Streamlit.")
         return None
 
-# Inicializar Firebase
 if not firebase_admin._apps:
     firebase_cred = get_firebase_credentials()
     if firebase_cred:
@@ -99,7 +93,6 @@ if not firebase_admin._apps:
     else:
         st.error("No se pudieron obtener las credenciales de Firebase.")
 
-# Funciones de autenticación
 def sign_up(email, password):
     try:
         user = auth.create_user(email=email, password=password)
@@ -111,13 +104,11 @@ def sign_up(email, password):
 def sign_in(email, password):
     try:
         user = auth.get_user_by_email(email)
-        # Aquí se debería verificar la contraseña (esto es solo un ejemplo)
         return user
     except Exception as e:
         st.error(f"Error durante el inicio de sesión: {str(e)}")
         return None
 
-# Función para subir archivos al almacenamiento
 def upload_file(file, user_id):
     try:
         bucket = storage.bucket()
@@ -128,23 +119,16 @@ def upload_file(file, user_id):
         st.error(f"Error al subir el archivo: {str(e)}")
         return None
 
-
 def get_user_files(user_id):
-    """Obtiene la lista de archivos subidos por el usuario desde Firebase."""
     try:
         bucket = storage.bucket()
-        # Obtener todos los blobs (archivos) en la carpeta del usuario
         blobs = bucket.list_blobs(prefix=f"users/{user_id}/")
-        
-        # Extraer solo los nombres de los archivos
         user_files = [blob.name.split('/')[-1] for blob in blobs if blob.name != f"users/{user_id}/"]
         return user_files
     except Exception as e:
         st.error(f"Error al obtener los archivos del usuario: {str(e)}")
         return []
 
-
-# Existing data analysis functions
 def aplicar_filtro_pasabanda(datos, corte_bajo, corte_alto, fs, orden=5):
     nyq = 0.5 * fs
     bajo = corte_bajo / nyq
@@ -164,24 +148,20 @@ def calcular_fft(datos, fs):
     return frecuencias, magnitudes
 
 def procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_taper):
-    fs_predeterminada = 100  # Puedes ajustar esto según tus datos o especificaciones del sensor
-    fs = fs_predeterminada  # Inicializamos fs con el valor predeterminado
+    fs_predeterminada = 100
+    fs = fs_predeterminada
     
-    # Verificar si existe una columna de tiempo
     columnas_tiempo = ['marca_tiempo', 'timestamp', 'tiempo']
     columna_tiempo = next((col for col in columnas_tiempo if col in df.columns), None)
     
     if columna_tiempo:
         try:
-            # Intenta convertir la columna de tiempo a datetime
             df[columna_tiempo] = pd.to_datetime(df[columna_tiempo], errors='coerce')
             
-            # Verifica si hay valores NaT (Not a Time) después de la conversión
             if df[columna_tiempo].isnull().any():
                 st.warning(f"Algunos valores en la columna {columna_tiempo} no pudieron ser convertidos a fechas. Se usará un índice numérico en su lugar.")
                 df[columna_tiempo] = pd.to_numeric(df.index)
             else:
-                # Calcula la diferencia de tiempo si la conversión fue exitosa
                 diferencia_tiempo = (df[columna_tiempo].iloc[1] - df[columna_tiempo].iloc[0]).total_seconds()
                 if diferencia_tiempo > 0:
                     fs = 1 / diferencia_tiempo
@@ -189,7 +169,6 @@ def procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_tape
             st.warning(f"Error al procesar la columna de tiempo: {str(e)}. Se usará un índice numérico en su lugar.")
             df[columna_tiempo] = pd.to_numeric(df.index)
     else:
-        # Si no hay columna de tiempo, usamos el índice como tiempo
         st.warning("No se encontró una columna de tiempo válida. Se usará el índice como tiempo.")
         df['tiempo'] = pd.to_numeric(df.index)
         columna_tiempo = 'tiempo'
@@ -198,13 +177,8 @@ def procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_tape
 
     resultados = {}
     for canal in canales:
-        # Aplicar filtro pasabanda
         datos_filtrados = aplicar_filtro_pasabanda(df[canal], corte_bajo=corte_bajo, corte_alto=corte_alto, fs=fs)
-        
-        # Aplicar taper
         datos_con_taper = aplicar_taper(datos_filtrados, porcentaje=porcentaje_taper)
-        
-        # Calcular FFT
         frecuencias, magnitudes = calcular_fft(datos_con_taper, fs)
         
         resultados[canal] = {
@@ -230,7 +204,6 @@ def graficar_resultados(resultados, fs, canales):
         fig.add_trace(go.Scatter(x=tiempo, y=resultados[canal]['serie_tiempo'], name="Original"), row=1, col=1)
         fig.add_trace(go.Scatter(x=tiempo, y=resultados[canal]['serie_filtrada'], name="Filtrado"), row=1, col=2)
         
-        # Centrar el gráfico FFT en los datos importantes
         frecuencias_fft = resultados[canal]['frecuencias_fft']
         magnitudes_fft = resultados[canal]['magnitudes_fft']
         indice_freq_max = np.argmax(magnitudes_fft)
@@ -295,13 +268,11 @@ def graficar_ratio_y_promedio(resultados, fs, tipo_ratio):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=frecuencias, y=ratio, name=f'Ratio {tipo_ratio}', line=dict(color='blue')))
     
-    # Calcular y graficar el promedio móvil
     tamano_ventana = 10
     promedio_movil = np.convolve(ratio, np.ones(tamano_ventana)/tamano_ventana, mode='valid')
     fig.add_trace(go.Scatter(x=frecuencias[tamano_ventana-1:], y=promedio_movil, 
                              name=f'Promedio {tipo_ratio}', line=dict(color='red')))
     
-    # Calcular y graficar la desviación estándar
     desviacion_estandar = np.std(ratio)
     fig.add_trace(go.Scatter(x=frecuencias, y=np.ones_like(frecuencias) * (np.mean(ratio) + desviacion_estandar),
                              name='Desviación Estándar Superior', line=dict(color='green', dash='dot')))
@@ -314,11 +285,9 @@ def graficar_ratio_y_promedio(resultados, fs, tipo_ratio):
                       height=600, width=1000)
     return fig
 
-
 def main():
     st.title("Análisis del Acelerograma")
 
-    # Initialize Firebase
     if not firebase_admin._apps:
         firebase_cred = get_firebase_credentials()
         if firebase_cred:
@@ -332,10 +301,8 @@ def main():
         else:
             st.error("No se pudieron obtener las credenciales de Firebase.")
 
-    # Detect device type
     device_type = detect_device()
 
-    # Authentication
     if 'user' not in st.session_state:
         st.session_state.user = None
 
@@ -362,8 +329,6 @@ def main():
                     st.success("Registrado con éxito!")
                     st.rerun()
     else:
-     if st.session_state.user:
-        # Instead of accessing user['email'], use the appropriate method
         user_email = st.session_state.user.email
         st.write(f"Bienvenido, {user_email}")
         
@@ -385,22 +350,21 @@ def main():
         elif device_type == 'Web':
             st.write("Bienvenido, usuario web. Puedes ver los datos del acelerómetro del iPhone aquí.")
             
-            # Option to select data source
             data_source = st.radio("Seleccione la fuente de datos:", ["Archivo subido", "Datos en tiempo real del iPhone"])
 
             if data_source == "Archivo subido":
                 uploaded_file = st.file_uploader("Sube un archivo CSV o TXT", type=["csv", "txt"])
                 if uploaded_file:
-                    file_url = upload_file(uploaded_file, st.session_state.user['uid'])
+                    file_url = upload_file(uploaded_file, st.session_state.user.uid)
                     if file_url:
                         st.success("Archivo subido exitosamente!")
 
-                user_files = get_user_files(st.session_state.user['uid'])
+                user_files = get_user_files(st.session_state.user.uid)
                 selected_file = st.selectbox("Select a file for analysis", user_files)
 
                 if selected_file:
                     bucket = storage.bucket()
-                    blob = bucket.blob(f"users/{st.session_state.user['uid']}/{selected_file}")
+                    blob = bucket.blob(f"users/{st.session_state.user.uid}/{selected_file}")
                     _, temp_local_filename = tempfile.mkstemp()
                     blob.download_to_filename(temp_local_filename)
 
