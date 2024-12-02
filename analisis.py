@@ -362,7 +362,11 @@ def main():
                     st.success("Registrado con éxito!")
                     st.rerun()
     else:
-        st.write(f"Bienvenido, {st.session_state.user['email']}")
+     if st.session_state.user:
+        # Instead of accessing user['email'], use the appropriate method
+        user_email = st.session_state.user.email
+        st.write(f"Bienvenido, {user_email}")
+        
         if st.button("Cerrar sesión"):
             st.session_state.user = None
             st.rerun()
