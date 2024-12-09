@@ -12,7 +12,6 @@ import os
 import io
 from PIL import Image
 import random
-import xlsxwriter
 
 st.set_page_config(page_title="Análisis del Acelerograma", layout="wide")
 
@@ -197,7 +196,7 @@ def seleccionar_secciones_aleatorias(datos, fs, num_secciones=5, duracion_seccio
     indices_inicio = random.sample(range(inicio_maximo + 1), num_secciones_posibles)
     return [(inicio, min(inicio + longitud_seccion, longitud_datos)) for inicio in indices_inicio]
 
-def descargar_datos_procesados(resultados, canales):
+def descargar_datos_procesados(resultados, canales, fs): # Update 1: Added fs parameter
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         for canal in canales:
@@ -217,7 +216,7 @@ def main():
     st.title("Análisis del Acelerograma")
 
     # Sidebar image placeholder
-    st.sidebar.image("logoUAMSis.png", use_column_width=True, caption="UAM Azcapotzalco")
+    st.sidebar.image("logoUAMSis.png", use_column_width=True, caption="Imagen del sidebar")
 
     if 'user' not in st.session_state:
         st.session_state.user = None
@@ -304,7 +303,7 @@ def main():
                     st.plotly_chart(fig_fft)
 
                 # Add download button for processed data
-                output = descargar_datos_procesados(resultados, canales)
+                output = descargar_datos_procesados(resultados, canales, fs) # Update 2: Added fs parameter to function call
                 st.download_button(
                     label="Descargar datos procesados",
                     data=output,
