@@ -11,6 +11,7 @@ import tempfile
 import os
 import io
 from PIL import Image
+import random
 
 st.set_page_config(page_title="Análisis del Acelerograma", layout="wide")
 
@@ -215,7 +216,7 @@ def main():
     st.title("Análisis del Acelerograma")
 
     # Sidebar image placeholder
-    st.sidebar.image("logoUAMSis.png", use_column_width=True)
+    st.sidebar.image("placeholder.png", use_column_width=True, caption="Imagen del sidebar")
 
     if 'user' not in st.session_state:
         st.session_state.user = None
