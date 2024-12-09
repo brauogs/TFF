@@ -196,16 +196,31 @@ def seleccionar_secciones_aleatorias(datos, fs, num_secciones=5, duracion_seccio
     indices_inicio = random.sample(range(inicio_maximo + 1), num_secciones_posibles)
     return [(inicio, min(inicio + longitud_seccion, longitud_datos)) for inicio in indices_inicio]
 
-def descargar_datos_procesados(resultados, canales, fs): # Update 1: Added fs parameter
+def descargar_datos_procesados(resultados, canales, fs):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         for canal in canales:
+            # Ensure all arrays have the same length
+            tiempo = np.arange(len(resultados[canal]['serie_tiempo'])) / fs
+            original = resultados[canal]['serie_tiempo']
+            filtrado = resultados[canal]['serie_filtrada']
+            frecuencias_fft = resultados[canal]['frecuencias_fft']
+            magnitudes_fft = resultados[canal]['magnitudes_fft']
+            
+            # Pad shorter arrays with NaN values
+            max_length = max(len(tiempo), len(original), len(filtrado), len(frecuencias_fft), len(magnitudes_fft))
+            tiempo = np.pad(tiempo, (0, max_length - len(tiempo)), mode='constant', constant_values=np.nan)
+            original = np.pad(original, (0, max_length - len(original)), mode='constant', constant_values=np.nan)
+            filtrado = np.pad(filtrado, (0, max_length - len(filtrado)), mode='constant', constant_values=np.nan)
+            frecuencias_fft = np.pad(frecuencias_fft, (0, max_length - len(frecuencias_fft)), mode='constant', constant_values=np.nan)
+            magnitudes_fft = np.pad(magnitudes_fft, (0, max_length - len(magnitudes_fft)), mode='constant', constant_values=np.nan)
+            
             df = pd.DataFrame({
-                'Tiempo': np.arange(len(resultados[canal]['serie_tiempo'])) / fs,
-                'Original': resultados[canal]['serie_tiempo'],
-                'Filtrado': resultados[canal]['serie_filtrada'],
-                'Frecuencias_FFT': resultados[canal]['frecuencias_fft'],
-                'Magnitudes_FFT': resultados[canal]['magnitudes_fft']
+                'Tiempo': tiempo,
+                'Original': original,
+                'Filtrado': filtrado,
+                'Frecuencias_FFT': frecuencias_fft,
+                'Magnitudes_FFT': magnitudes_fft
             })
             df.to_excel(writer, sheet_name=f'Canal_{canal}', index=False)
     
@@ -303,7 +318,7 @@ def main():
                     st.plotly_chart(fig_fft)
 
                 # Add download button for processed data
-                output = descargar_datos_procesados(resultados, canales, fs) # Update 2: Added fs parameter to function call
+                output = descargar_datos_procesados(resultados, canales, fs)
                 st.download_button(
                     label="Descargar datos procesados",
                     data=output,
