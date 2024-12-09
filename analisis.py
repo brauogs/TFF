@@ -12,6 +12,7 @@ import os
 import io
 from PIL import Image
 import random
+import xlsxwriter
 
 st.set_page_config(page_title="Análisis del Acelerograma", layout="wide")
 

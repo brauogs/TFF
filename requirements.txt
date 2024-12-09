@@ -9,3 +9,4 @@ pillow
 firebase-admin
 flask
 streamlit-autorefresh
+xlsxwriter
