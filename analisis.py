@@ -207,26 +207,43 @@ def graficar_resultados(resultados, fs, canales):
     fig.update_yaxes(title_text="Magnitud", row=2, col=1)
     return fig
 
+def metodo_nakamura(datos_x, datos_y, datos_z, fs):
+    # Calculate power spectral density for each component
+    f, Pxx = signal.welch(datos_x, fs, nperseg=min(len(datos_x), int(fs * 60)))
+    _, Pyy = signal.welch(datos_y, fs, nperseg=min(len(datos_y), int(fs * 60)))
+    _, Pzz = signal.welch(datos_z, fs, nperseg=min(len(datos_z), int(fs * 60)))
+    
+    # Calculate H/V ratio
+    hv = np.sqrt((Pxx + Pyy) / (2 * Pzz))
+    
+    # Find the peak (fundamental frequency)
+    indice_max = np.argmax(hv)
+    frecuencia_fundamental = f[indice_max]
+    periodo_fundamental = 1 / frecuencia_fundamental
+    
+    return f, hv, frecuencia_fundamental, periodo_fundamental
+
+# Update the seleccionar_secciones_aleatorias function to return the actual data
 def seleccionar_secciones_aleatorias(datos, fs, num_secciones=5, duracion_seccion=30):
     longitud_seccion = int(duracion_seccion * fs)
     longitud_datos = len(datos)
     
     if longitud_datos <= longitud_seccion:
         st.warning("La duración de la sección es mayor o igual que los datos disponibles. Se utilizará toda la serie de datos.")
-        return [(0, longitud_datos)]
+        return [(0, longitud_datos, datos)]
     
     inicio_maximo = longitud_datos - longitud_seccion
     num_secciones_posibles = min(num_secciones, inicio_maximo)
     
     if num_secciones_posibles == 0:
         st.warning("No hay suficientes datos para seleccionar secciones. Se utilizará toda la serie de datos.")
-        return [(0, longitud_datos)]
+        return [(0, longitud_datos, datos)]
     
     if num_secciones_posibles < num_secciones:
         st.warning(f"Solo se pueden seleccionar {num_secciones_posibles} secciones con la duración especificada.")
     
     indices_inicio = random.sample(range(inicio_maximo + 1), num_secciones_posibles)
-    return [(inicio, min(inicio + longitud_seccion, longitud_datos)) for inicio in indices_inicio]
+    return [(inicio, min(inicio + longitud_seccion, longitud_datos), datos[inicio:min(inicio + longitud_seccion, longitud_datos)]) for inicio in indices_inicio]
 
 def descargar_datos_procesados(resultados, canales, fs):
     output = io.BytesIO()
@@ -263,7 +280,7 @@ def main():
     st.title("Análisis del Acelerograma")
 
     # Sidebar image placeholder
-    st.sidebar.image("logoUAMSis.png", use_container_width=True, caption="Imagen del sidebar")
+    st.sidebar.image("logoUAMSis.png", use_column_width=True, caption="Imagen del sidebar")
 
     if 'user' not in st.session_state:
         st.session_state.user = None
@@ -338,33 +355,46 @@ def main():
                 fig = graficar_resultados(resultados, fs, canales)
                 st.plotly_chart(fig)
 
-                st.subheader("Rutinas FFT en secciones aleatorias")
-                for canal in canales:
-                    secciones = seleccionar_secciones_aleatorias(resultados[canal]['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
+                st.subheader("Rutinas FFT y Análisis H/V (Método de Nakamura) en secciones aleatorias")
+                
+                if canal_seleccionado == 'Todos los canales':
+                    secciones_x = seleccionar_secciones_aleatorias(resultados['x']['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
+                    secciones_y = seleccionar_secciones_aleatorias(resultados['y']['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
+                    secciones_z = seleccionar_secciones_aleatorias(resultados['z']['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
 
-                    fig_fft = make_subplots(rows=len(secciones), cols=1)
-                    for i, (inicio, fin) in enumerate(secciones):
-                        datos_seccion = resultados[canal]['serie_filtrada'][inicio:fin]
-                        frecuencias, magnitudes = calcular_fft(datos_seccion, fs)
-                        fig_fft.add_trace(go.Scatter(x=frecuencias, y=magnitudes, name=f"FFT Sección {i+1}"), row=i+1, col=1)
-                    st.plotly_chart(fig_fft)
+                    for i, ((inicio_x, fin_x, datos_x), (_, _, datos_y), (_, _, datos_z)) in enumerate(zip(secciones_x, secciones_y, secciones_z)):
+                        st.write(f"Sección {i+1}")
+                        
+                        # FFT analysis
+                        fig_fft = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05)
+                        for j, (canal, datos) in enumerate([('X', datos_x), ('Y', datos_y), ('Z', datos_z)]):
+                            frecuencias, magnitudes = calcular_fft(datos, fs)
+                            fig_fft.add_trace(go.Scatter(x=frecuencias, y=magnitudes, name=f"FFT Canal {canal}"), row=j+1, col=1)
+                            fig_fft.update_yaxes(title_text=f"Magnitud {canal}", row=j+1, col=1)
+                        
+                        fig_fft.update_layout(height=800, title_text=f"FFT Sección {i+1}")
+                        fig_fft.update_xaxes(title_text="Frecuencia (Hz)", row=3, col=1)
+                        st.plotly_chart(fig_fft)
 
-                # H/V analysis results
-                if 'hv' in resultados:
-                    st.subheader("Análisis H/V")
-                    st.write(f"Periodo fundamental del suelo: {resultados['hv']['periodo_fundamental']:.2f} segundos")
-                    st.write(f"Frecuencia fundamental del suelo: {resultados['hv']['frecuencia_fundamental']:.2f} Hz")
+                        # H/V analysis using Nakamura method
+                        f, hv, frecuencia_fundamental, periodo_fundamental = metodo_nakamura(datos_x, datos_y, datos_z, fs)
+                        
+                        fig_hv = go.Figure()
+                        fig_hv.add_trace(go.Scatter(x=f, y=hv, name="H/V"))
+                        fig_hv.add_vline(x=frecuencia_fundamental, line_dash="dash", line_color="red")
+                        fig_hv.update_layout(
+                            title=f"Curva H/V - Sección {i+1}",
+                            xaxis_title="Frecuencia (Hz)",
+                            yaxis_title="Ratio H/V",
+                            xaxis_type="log"
+                        )
+                        st.plotly_chart(fig_hv)
 
-                    fig_hv = go.Figure()
-                    fig_hv.add_trace(go.Scatter(x=resultados['hv']['frecuencias'], y=resultados['hv']['hv'], name="H/V"))
-                    fig_hv.add_vline(x=resultados['hv']['frecuencia_fundamental'], line_dash="dash", line_color="red")
-                    fig_hv.update_layout(
-                        title="Curva H/V",
-                        xaxis_title="Frecuencia (Hz)",
-                        yaxis_title="Ratio H/V",
-                        xaxis_type="log"
-                    )
-                    st.plotly_chart(fig_hv)
+                        st.write(f"Frecuencia fundamental del suelo: {frecuencia_fundamental:.2f} Hz")
+                        st.write(f"Periodo fundamental del suelo: {periodo_fundamental:.2f} segundos")
+                        st.markdown("---")
+                else:
+                    st.warning("El análisis H/V requiere datos de los tres canales (X, Y, Z). Por favor, seleccione 'Todos los canales' para realizar este análisis.")
 
                 # Add download button for processed data
                 output = descargar_datos_procesados(resultados, canales, fs)
@@ -380,13 +410,13 @@ def main():
     1. Inicie sesión o cree una cuenta.
     2. Suba un archivo CSV o TXT para analizar.
     3. Seleccione un archivo de sus archivos subidos.
-    4. Elija el canal a analizar.
+    4. Elija el canal a analizar (seleccione 'Todos los canales' para el análisis H/V).
     5. Ajuste los parámetros de filtrado en la barra lateral.
     6. Especifique el número de rutinas FFT a realizar.
     7. Haga clic en 'Analizar datos' para ver los resultados.
-    8. Descargue los datos procesados si lo desea.
+    8. Revise los gráficos FFT y H/V para cada sección aleatoria.
+    9. Descargue los datos procesados si lo desea.
     """)
 
 if __name__ == "__main__":
     main()
-
