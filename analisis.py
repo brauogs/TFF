@@ -4,7 +4,7 @@ from firebase_admin import credentials, auth, storage
 import pandas as pd
 import numpy as np
 from scipy import signal
-from scipy.fft import fft
+from scipy.fft import fft, fftfreq
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import tempfile
@@ -89,6 +89,23 @@ def calcular_fft(datos, fs):
     magnitudes = 2.0/n * np.abs(resultado_fft[0:n//2])
     return frecuencias, magnitudes
 
+def calcular_espectro_potencia(datos, fs, nperseg=None):
+    if nperseg is None:
+        nperseg = min(len(datos), int(fs * 60))  # 60 segundos o la longitud total de los datos
+    frecuencias, Pxx = signal.welch(datos, fs, nperseg=nperseg)
+    return frecuencias, Pxx
+
+def calcular_hv(espectros):
+    h_cuadrado = espectros['x'] + espectros['y']
+    hv = np.sqrt(h_cuadrado) / espectros['z']
+    return hv
+
+def obtener_periodo_fundamental(frecuencias, hv):
+    indice_max = np.argmax(hv)
+    frecuencia_fundamental = frecuencias[indice_max]
+    periodo_fundamental = 1 / frecuencia_fundamental
+    return periodo_fundamental, frecuencia_fundamental
+
 def procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_taper):
     fs_predeterminada = 100
     fs = fs_predeterminada
@@ -118,16 +135,31 @@ def procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_tape
     st.info(f"Frecuencia de muestreo utilizada: {fs} Hz")
 
     resultados = {}
+    espectros = {}
     for canal in canales:
         datos_filtrados = aplicar_filtro_pasabanda(df[canal], corte_bajo=corte_bajo, corte_alto=corte_alto, fs=fs)
         datos_con_taper = aplicar_taper(datos_filtrados, porcentaje=porcentaje_taper)
         frecuencias, magnitudes = calcular_fft(datos_con_taper, fs)
+        frecuencias_psd, psd = calcular_espectro_potencia(datos_con_taper, fs)
         
         resultados[canal] = {
             'serie_tiempo': df[canal],
             'serie_filtrada': datos_con_taper,
             'frecuencias_fft': frecuencias,
-            'magnitudes_fft': magnitudes
+            'magnitudes_fft': magnitudes,
+            'frecuencias_psd': frecuencias_psd,
+            'psd': psd
+        }
+        espectros[canal] = psd
+
+    if set(['x', 'y', 'z']).issubset(canales):
+        hv = calcular_hv(espectros)
+        periodo_fundamental, frecuencia_fundamental = obtener_periodo_fundamental(frecuencias_psd, hv)
+        resultados['hv'] = {
+            'frecuencias': frecuencias_psd,
+            'hv': hv,
+            'periodo_fundamental': periodo_fundamental,
+            'frecuencia_fundamental': frecuencia_fundamental
         }
     
     return resultados, fs, columna_tiempo
@@ -316,6 +348,23 @@ def main():
                         frecuencias, magnitudes = calcular_fft(datos_seccion, fs)
                         fig_fft.add_trace(go.Scatter(x=frecuencias, y=magnitudes, name=f"FFT Sección {i+1}"), row=i+1, col=1)
                     st.plotly_chart(fig_fft)
+
+                # H/V analysis results
+                if 'hv' in resultados:
+                    st.subheader("Análisis H/V")
+                    st.write(f"Periodo fundamental del suelo: {resultados['hv']['periodo_fundamental']:.2f} segundos")
+                    st.write(f"Frecuencia fundamental del suelo: {resultados['hv']['frecuencia_fundamental']:.2f} Hz")
+
+                    fig_hv = go.Figure()
+                    fig_hv.add_trace(go.Scatter(x=resultados['hv']['frecuencias'], y=resultados['hv']['hv'], name="H/V"))
+                    fig_hv.add_vline(x=resultados['hv']['frecuencia_fundamental'], line_dash="dash", line_color="red")
+                    fig_hv.update_layout(
+                        title="Curva H/V",
+                        xaxis_title="Frecuencia (Hz)",
+                        yaxis_title="Ratio H/V",
+                        xaxis_type="log"
+                    )
+                    st.plotly_chart(fig_hv)
 
                 # Add download button for processed data
                 output = descargar_datos_procesados(resultados, canales, fs)
