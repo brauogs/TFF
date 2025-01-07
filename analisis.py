@@ -280,7 +280,7 @@ def main():
     st.title("Análisis del Acelerograma")
 
     # Sidebar image placeholder
-    st.sidebar.image("logoUAMSis.png", use_container_width=True, caption="Imagen del sidebar")
+    st.sidebar.image("logoUAMSis.png", use_container_width=True)
 
     if 'user' not in st.session_state:
         st.session_state.user = None
