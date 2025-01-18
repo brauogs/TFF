@@ -208,6 +208,9 @@ def graficar_resultados(resultados, fs, canales):
     return fig
 
 def metodo_nakamura(datos_x, datos_y, datos_z, fs):
+    from scipy.signal import savgol_filter
+    from scipy.stats import chi2
+    
     # Calculate power spectral density for each component
     f, Pxx = signal.welch(datos_x, fs, nperseg=min(len(datos_x), int(fs * 60)))
     _, Pyy = signal.welch(datos_y, fs, nperseg=min(len(datos_y), int(fs * 60)))
@@ -216,14 +219,48 @@ def metodo_nakamura(datos_x, datos_y, datos_z, fs):
     # Calculate H/V ratio
     hv = np.sqrt((Pxx + Pyy) / (2 * Pzz))
     
-    # Find the peak (fundamental frequency)
-    indice_max = np.argmax(hv)
-    frecuencia_fundamental = f[indice_max]
-    periodo_fundamental = 1 / frecuencia_fundamental
+    # Smooth H/V curve using Konno-Ohmachi smoothing
+    def konno_ohmachi_smooth(f, hv, b=40):
+        smoothed = np.zeros_like(hv)
+        for i, fc in enumerate(f):
+            w = np.zeros_like(f)
+            w[f > 0] = (np.sin(b * np.log10(f[f > 0]/fc)) / (b * np.log10(f[f > 0]/fc)))**4
+            w[f <= 0] = 0
+            w[np.isnan(w)] = 1
+            w = w / np.sum(w)
+            smoothed[i] = np.sum(hv * w)
+        return smoothed
     
-    return f, hv, frecuencia_fundamental, periodo_fundamental
+    hv_smooth = konno_ohmachi_smooth(f, hv)
+    
+    # Calculate standard deviation using sliding window
+    window_size = 5
+    std_dev = np.zeros_like(hv_smooth)
+    for i in range(len(hv_smooth)):
+        start_idx = max(0, i - window_size//2)
+        end_idx = min(len(hv_smooth), i + window_size//2 + 1)
+        std_dev[i] = np.std(hv[start_idx:end_idx])
+    
+    # Calculate confidence bounds
+    hv_plus_std = hv_smooth + std_dev
+    hv_minus_std = hv_smooth - std_dev
+    
+    # Find peaks
+    from scipy.signal import find_peaks
+    peaks, _ = find_peaks(hv_smooth, height=np.mean(hv_smooth), distance=int(len(f)/10))
+    
+    # Sort peaks by amplitude
+    peak_amplitudes = hv_smooth[peaks]
+    sorted_peak_indices = np.argsort(peak_amplitudes)[::-1]
+    sorted_peaks = peaks[sorted_peak_indices]
+    
+    # Get the top 3 peaks
+    top_peaks = sorted_peaks[:3]
+    fundamental_frequencies = f[top_peaks]
+    fundamental_periods = 1 / fundamental_frequencies
+    
+    return f, hv_smooth, hv_plus_std, hv_minus_std, fundamental_frequencies, fundamental_periods
 
-# Update the seleccionar_secciones_aleatorias function to return the actual data
 def seleccionar_secciones_aleatorias(datos, fs, num_secciones=5, duracion_seccion=30):
     longitud_seccion = int(duracion_seccion * fs)
     longitud_datos = len(datos)
@@ -275,6 +312,91 @@ def descargar_datos_procesados(resultados, canales, fs):
     
     output.seek(0)
     return output
+
+def plot_hv_degtra_style(f, hv_smooth, hv_plus_std, hv_minus_std, fundamental_frequencies):
+    fig = go.Figure()
+    
+    # Add grid style similar to DEGTRA
+    fig.update_layout(
+        plot_bgcolor='white',
+        xaxis=dict(
+            type='log',
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='lightgray',
+            minor=dict(
+                showgrid=True,
+                gridwidth=0.5,
+                gridcolor='rgba(211, 211, 211, 0.5)'
+            ),
+            title='f, Hz',
+            range=[-1, 2]  # 10^-1 to 10^2
+        ),
+        yaxis=dict(
+            type='log',
+            showgrid=True,
+            gridwidth=1,
+            gridcolor='lightgray',
+            minor=dict(
+                showgrid=True,
+                gridwidth=0.5,
+                gridcolor='rgba(211, 211, 211, 0.5)'
+            ),
+            title='H/V',
+            range=[-1, 1]  # 10^-1 to 10^1
+        )
+    )
+    
+    # Add mean line
+    fig.add_trace(go.Scatter(
+        x=f,
+        y=hv_smooth,
+        mode='lines',
+        name='mean',
+        line=dict(color='red', width=1.5)
+    ))
+    
+    # Add standard deviation lines
+    fig.add_trace(go.Scatter(
+        x=f,
+        y=hv_plus_std,
+        mode='lines',
+        name='m+s',
+        line=dict(color='red', width=1, dash='dash')
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=f,
+        y=hv_minus_std,
+        mode='lines',
+        name='m-s',
+        line=dict(color='red', width=1, dash='dash')
+    ))
+    
+    # Add vertical lines for fundamental frequencies
+    for freq in fundamental_frequencies:
+        fig.add_vline(
+            x=freq,
+            line_dash="dot",
+            line_color="red",
+            opacity=0.5
+        )
+    
+    # Update layout
+    fig.update_layout(
+        title="Análisis H/V (Estilo DEGTRA)",
+        showlegend=True,
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="right",
+            x=0.99
+        ),
+        width=800,
+        height=500
+    )
+    
+    return fig
 
 def main():
     st.title("Análisis del Acelerograma")
@@ -356,11 +478,14 @@ def main():
                 st.plotly_chart(fig)
 
                 st.subheader("Rutinas FFT y Análisis H/V (Método de Nakamura) en secciones aleatorias")
-                
+        
                 if canal_seleccionado == 'Todos los canales':
                     secciones_x = seleccionar_secciones_aleatorias(resultados['x']['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
                     secciones_y = seleccionar_secciones_aleatorias(resultados['y']['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
                     secciones_z = seleccionar_secciones_aleatorias(resultados['z']['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
+
+                    frecuencias_fundamentales = []
+                    periodos_fundamentales = []
 
                     for i, ((inicio_x, fin_x, datos_x), (_, _, datos_y), (_, _, datos_z)) in enumerate(zip(secciones_x, secciones_y, secciones_z)):
                         st.write(f"Sección {i+1}")
@@ -376,23 +501,42 @@ def main():
                         fig_fft.update_xaxes(title_text="Frecuencia (Hz)", row=3, col=1)
                         st.plotly_chart(fig_fft)
 
-                        # H/V analysis using Nakamura method
-                        f, hv, frecuencia_fundamental, periodo_fundamental = metodo_nakamura(datos_x, datos_y, datos_z, fs)
-                        
-                        fig_hv = go.Figure()
-                        fig_hv.add_trace(go.Scatter(x=f, y=hv, name="H/V"))
-                        fig_hv.add_vline(x=frecuencia_fundamental, line_dash="dash", line_color="red")
-                        fig_hv.update_layout(
-                            title=f"Curva H/V - Sección {i+1}",
-                            xaxis_title="Frecuencia (Hz)",
-                            yaxis_title="Ratio H/V",
-                            xaxis_type="log"
-                        )
+                        # H/V analysis using improved Nakamura method
+                        f, hv_smooth, hv_plus_std, hv_minus_std, fundamental_frequencies_section, fundamental_periods_section = metodo_nakamura(datos_x, datos_y, datos_z, fs)
+
+                        fig_hv = plot_hv_degtra_style(f, hv_smooth, hv_plus_std, hv_minus_std, fundamental_frequencies_section)
                         st.plotly_chart(fig_hv)
 
-                        st.write(f"Frecuencia fundamental del suelo: {frecuencia_fundamental:.2f} Hz")
-                        st.write(f"Periodo fundamental del suelo: {periodo_fundamental:.2f} segundos")
-                        st.markdown("---")
+                        st.write("Frecuencias fundamentales identificadas:")
+                        for k, (freq, period) in enumerate(zip(fundamental_frequencies_section, fundamental_periods_section)):
+                            st.write(f"Pico {k+1}:")
+                            st.write(f"  Frecuencia: {freq:.2f} Hz")
+                            st.write(f"  Periodo: {period:.2f} segundos")
+
+
+                        frecuencias_fundamentales.append(fundamental_frequencies_section)
+                        periodos_fundamentales.append(fundamental_periods_section)
+
+                    # Calculate and display average fundamental frequency and period
+                    st.subheader("Resumen de resultados")
+                    for i in range(min(3, len(frecuencias_fundamentales[0]))):
+                        promedio_frecuencia = np.mean([f[i] for f in frecuencias_fundamentales if len(f) > i])
+                        promedio_periodo = np.mean([p[i] for p in periodos_fundamentales if len(p) > i])
+                        st.write(f"Pico {i+1}:")
+                        st.write(f"  Promedio de frecuencias fundamentales: {promedio_frecuencia:.2f} Hz")
+                        st.write(f"  Promedio de periodos fundamentales: {promedio_periodo:.2f} segundos")
+
+                    # Compare with accelerometer's fundamental frequency
+                    frecuencia_acelerometro = 1.4  # Hz
+                    st.write(f"Frecuencia fundamental del acelerómetro: {frecuencia_acelerometro} Hz")
+
+                    if all(np.mean([f[0] for f in frecuencias_fundamentales]) < frecuencia_acelerometro for f in frecuencias_fundamentales):
+                        st.success("La frecuencia fundamental promedio del suelo (primer pico) es menor que la del acelerómetro, lo que indica que las mediciones son confiables.")
+                    else:
+                        st.warning("La frecuencia fundamental promedio del suelo (primer pico) es mayor o igual que la del acelerómetro. Esto podría afectar la confiabilidad de las mediciones en frecuencias más altas.")
+
+                    st.info("Nota: Se recomienda revisar los criterios SESAME para cada sección y pico para evaluar la confiabilidad de los resultados.")
+
                 else:
                     st.warning("El análisis H/V requiere datos de los tres canales (X, Y, Z). Por favor, seleccione 'Todos los canales' para realizar este análisis.")
 
@@ -420,3 +564,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
