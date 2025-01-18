@@ -208,9 +208,6 @@ def graficar_resultados(resultados, fs, canales):
     return fig
 
 def metodo_nakamura(datos_x, datos_y, datos_z, fs):
-    from scipy.signal import savgol_filter
-    from scipy.stats import chi2
-    
     # Calculate power spectral density for each component
     f, Pxx = signal.welch(datos_x, fs, nperseg=min(len(datos_x), int(fs * 60)))
     _, Pyy = signal.welch(datos_y, fs, nperseg=min(len(datos_y), int(fs * 60)))
@@ -219,59 +216,14 @@ def metodo_nakamura(datos_x, datos_y, datos_z, fs):
     # Calculate H/V ratio
     hv = np.sqrt((Pxx + Pyy) / (2 * Pzz))
     
-    # Smooth H/V curve
-    hv_smooth = savgol_filter(hv, window_length=11, polyorder=3)
+    # Find the peak (fundamental frequency)
+    indice_max = np.argmax(hv)
+    frecuencia_fundamental = f[indice_max]
+    periodo_fundamental = 1 / frecuencia_fundamental
     
-    # Calculate confidence intervals
-    df = 4  # Degrees of freedom (can be adjusted)
-    ci_low = hv_smooth * chi2.ppf(0.05, df) / df
-    ci_high = hv_smooth * chi2.ppf(0.95, df) / df
-    
-    # Find peaks
-    from scipy.signal import find_peaks
-    peaks, _ = find_peaks(hv_smooth, height=np.mean(hv_smooth), distance=int(len(f)/10))
-    
-    # Sort peaks by amplitude
-    peak_amplitudes = hv_smooth[peaks]
-    sorted_peak_indices = np.argsort(peak_amplitudes)[::-1]
-    sorted_peaks = peaks[sorted_peak_indices]
-    
-    # Get the top 3 peaks
-    top_peaks = sorted_peaks[:3]
-    fundamental_frequencies = f[top_peaks]
-    fundamental_periods = 1 / fundamental_frequencies
-    
-    # SESAME criteria
-    def check_sesame_criteria(f0, hv_f0):
-        criteria_met = []
-        
-        # Criterion 1: f0 > 10 / window_length
-        window_length = len(datos_x) / fs
-        criteria_met.append(f0 > 10 / window_length)
-        
-        # Criterion 2: nc = window_length * f0 > 200
-        nc = window_length * f0
-        criteria_met.append(nc > 200)
-        
-        # Criterion 3: σA(f) < 2 for 0.5f0 < f < 2f0 when f0 > 0.5 Hz
-        #              σA(f) < 3 for 0.5f0 < f < 2f0 when f0 < 0.5 Hz
-        sigma_a = np.std(hv_smooth[(f > 0.5*f0) & (f < 2*f0)])
-        criteria_met.append(sigma_a < (3 if f0 < 0.5 else 2))
-        
-        # Criterion 4: σf < ε(f0) where ε(f0) is defined in SESAME guidelines
-        sigma_f = np.std(f[(f > 0.5*f0) & (f < 2*f0)])
-        epsilon = 0.25 * f0 if f0 > 1 else 0.25 * f0 ** 1.78
-        criteria_met.append(sigma_f < epsilon)
-        
-        # Criterion 5: Amplitude of the peak > 2
-        criteria_met.append(hv_f0 > 2)
-        
-        return criteria_met
-    
-    sesame_results = [check_sesame_criteria(ff, hv_smooth[top_peaks[i]]) for i, ff in enumerate(fundamental_frequencies)]
-    
-    return f, hv_smooth, ci_low, ci_high, fundamental_frequencies, fundamental_periods, sesame_results
+    return f, hv, frecuencia_fundamental, periodo_fundamental
 
+# Update the seleccionar_secciones_aleatorias function to return the actual data
 def seleccionar_secciones_aleatorias(datos, fs, num_secciones=5, duracion_seccion=30):
     longitud_seccion = int(duracion_seccion * fs)
     longitud_datos = len(datos)
@@ -404,14 +356,11 @@ def main():
                 st.plotly_chart(fig)
 
                 st.subheader("Rutinas FFT y Análisis H/V (Método de Nakamura) en secciones aleatorias")
-        
+                
                 if canal_seleccionado == 'Todos los canales':
                     secciones_x = seleccionar_secciones_aleatorias(resultados['x']['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
                     secciones_y = seleccionar_secciones_aleatorias(resultados['y']['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
                     secciones_z = seleccionar_secciones_aleatorias(resultados['z']['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
-
-                    frecuencias_fundamentales = []
-                    periodos_fundamentales = []
 
                     for i, ((inicio_x, fin_x, datos_x), (_, _, datos_y), (_, _, datos_z)) in enumerate(zip(secciones_x, secciones_y, secciones_z)):
                         st.write(f"Sección {i+1}")
@@ -427,17 +376,12 @@ def main():
                         fig_fft.update_xaxes(title_text="Frecuencia (Hz)", row=3, col=1)
                         st.plotly_chart(fig_fft)
 
-                        # H/V analysis using improved Nakamura method
-                        f, hv, ci_low, ci_high, fundamental_frequencies_section, fundamental_periods_section, sesame_results = metodo_nakamura(datos_x, datos_y, datos_z, fs)
-
+                        # H/V analysis using Nakamura method
+                        f, hv, frecuencia_fundamental, periodo_fundamental = metodo_nakamura(datos_x, datos_y, datos_z, fs)
+                        
                         fig_hv = go.Figure()
                         fig_hv.add_trace(go.Scatter(x=f, y=hv, name="H/V"))
-                        fig_hv.add_trace(go.Scatter(x=f, y=ci_low, name="CI Low", line=dict(dash='dash')))
-                        fig_hv.add_trace(go.Scatter(x=f, y=ci_high, name="CI High", line=dict(dash='dash')))
-
-                        for i, freq in enumerate(fundamental_frequencies_section):
-                            fig_hv.add_vline(x=freq, line_dash="dash", line_color="red", annotation_text=f"Peak {i+1}")
-
+                        fig_hv.add_vline(x=frecuencia_fundamental, line_dash="dash", line_color="red")
                         fig_hv.update_layout(
                             title=f"Curva H/V - Sección {i+1}",
                             xaxis_title="Frecuencia (Hz)",
@@ -446,39 +390,9 @@ def main():
                         )
                         st.plotly_chart(fig_hv)
 
-                        st.write("Resultados del análisis H/V:")
-                        for i, (freq, period) in enumerate(zip(fundamental_frequencies_section, fundamental_periods_section)):
-                            st.write(f"Pico {i+1}:")
-                            st.write(f"  Frecuencia fundamental: {freq:.2f} Hz")
-                            st.write(f"  Periodo fundamental: {period:.2f} segundos")
-                            st.write("  Criterios SESAME cumplidos:")
-                            for j, criterion in enumerate(sesame_results[i]):
-                                st.write(f"    Criterio {j+1}: {'Cumplido' if criterion else 'No cumplido'}")
-                            st.write("")
-
-                        frecuencias_fundamentales.append(fundamental_frequencies_section)
-                        periodos_fundamentales.append(fundamental_periods_section)
-
-                    # Calculate and display average fundamental frequency and period
-                    st.subheader("Resumen de resultados")
-                    for i in range(min(3, len(frecuencias_fundamentales[0]))):
-                        promedio_frecuencia = np.mean([f[i] for f in frecuencias_fundamentales if len(f) > i])
-                        promedio_periodo = np.mean([p[i] for p in periodos_fundamentales if len(p) > i])
-                        st.write(f"Pico {i+1}:")
-                        st.write(f"  Promedio de frecuencias fundamentales: {promedio_frecuencia:.2f} Hz")
-                        st.write(f"  Promedio de periodos fundamentales: {promedio_periodo:.2f} segundos")
-
-                    # Compare with accelerometer's fundamental frequency
-                    frecuencia_acelerometro = 1.4  # Hz
-                    st.write(f"Frecuencia fundamental del acelerómetro: {frecuencia_acelerometro} Hz")
-
-                    if all(np.mean([f[0] for f in frecuencias_fundamentales]) < frecuencia_acelerometro for f in frecuencias_fundamentales):
-                        st.success("La frecuencia fundamental promedio del suelo (primer pico) es menor que la del acelerómetro, lo que indica que las mediciones son confiables.")
-                    else:
-                        st.warning("La frecuencia fundamental promedio del suelo (primer pico) es mayor o igual que la del acelerómetro. Esto podría afectar la confiabilidad de las mediciones en frecuencias más altas.")
-
-                    st.info("Nota: Se recomienda revisar los criterios SESAME para cada sección y pico para evaluar la confiabilidad de los resultados.")
-
+                        st.write(f"Frecuencia fundamental del suelo: {frecuencia_fundamental:.2f} Hz")
+                        st.write(f"Periodo fundamental del suelo: {periodo_fundamental:.2f} segundos")
+                        st.markdown("---")
                 else:
                     st.warning("El análisis H/V requiere datos de los tres canales (X, Y, Z). Por favor, seleccione 'Todos los canales' para realizar este análisis.")
 
@@ -506,4 +420,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
