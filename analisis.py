@@ -356,11 +356,14 @@ def main():
                 st.plotly_chart(fig)
 
                 st.subheader("Rutinas FFT y Análisis H/V (Método de Nakamura) en secciones aleatorias")
-                
+        
                 if canal_seleccionado == 'Todos los canales':
                     secciones_x = seleccionar_secciones_aleatorias(resultados['x']['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
                     secciones_y = seleccionar_secciones_aleatorias(resultados['y']['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
                     secciones_z = seleccionar_secciones_aleatorias(resultados['z']['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
+
+                    frecuencias_fundamentales = []
+                    periodos_fundamentales = []
 
                     for i, ((inicio_x, fin_x, datos_x), (_, _, datos_y), (_, _, datos_z)) in enumerate(zip(secciones_x, secciones_y, secciones_z)):
                         st.write(f"Sección {i+1}")
@@ -393,6 +396,27 @@ def main():
                         st.write(f"Frecuencia fundamental del suelo: {frecuencia_fundamental:.2f} Hz")
                         st.write(f"Periodo fundamental del suelo: {periodo_fundamental:.2f} segundos")
                         st.markdown("---")
+
+                        frecuencias_fundamentales.append(frecuencia_fundamental)
+                        periodos_fundamentales.append(periodo_fundamental)
+
+                    # Calculate and display average fundamental frequency and period
+                    promedio_frecuencia = np.mean(frecuencias_fundamentales)
+                    promedio_periodo = np.mean(periodos_fundamentales)
+
+                    st.subheader("Resumen de resultados")
+                    st.write(f"Promedio de frecuencias fundamentales: {promedio_frecuencia:.2f} Hz")
+                    st.write(f"Promedio de periodos fundamentales: {promedio_periodo:.2f} segundos")
+
+                    # Compare with accelerometer's fundamental frequency
+                    frecuencia_acelerometro = 1.4  # Hz
+                    st.write(f"Frecuencia fundamental del acelerómetro: {frecuencia_acelerometro} Hz")
+
+                    if promedio_frecuencia < frecuencia_acelerometro:
+                        st.success("La frecuencia fundamental promedio del suelo es menor que la del acelerómetro, lo que indica que las mediciones son confiables.")
+                    else:
+                        st.warning("La frecuencia fundamental promedio del suelo es mayor o igual que la del acelerómetro. Esto podría afectar la confiabilidad de las mediciones en frecuencias más altas.")
+
                 else:
                     st.warning("El análisis H/V requiere datos de los tres canales (X, Y, Z). Por favor, seleccione 'Todos los canales' para realizar este análisis.")
 
@@ -420,3 +444,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
