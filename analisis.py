@@ -316,7 +316,7 @@ def descargar_datos_procesados(resultados, canales, fs):
 def plot_hv_degtra_style(f, hv_smooth, hv_plus_std, hv_minus_std, fundamental_frequencies):
     fig = go.Figure()
     
-    # Add grid style similar to DEGTRA
+    
     fig.update_layout(
         plot_bgcolor='white',
         xaxis=dict(
@@ -384,7 +384,7 @@ def plot_hv_degtra_style(f, hv_smooth, hv_plus_std, hv_minus_std, fundamental_fr
     
     # Update layout
     fig.update_layout(
-        title="Análisis H/V (Estilo DEGTRA)",
+        title="Análisis H/V",
         showlegend=True,
         legend=dict(
             yanchor="top",
