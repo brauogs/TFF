@@ -10,4 +10,3 @@ firebase-admin
 flask
 streamlit-autorefresh
 xlsxwriter
-scipy.signal
