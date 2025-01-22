@@ -264,6 +264,8 @@ def metodo_nakamura(datos_x, datos_y, datos_z, fs):
     # Aplicar suavizado a los espectros
     Phh_smooth = suavizado_konno_ohmachi(f, Phh)
     Pzz_smooth = suavizado_konno_ohmachi(f, Pzz)
+    Pxx_smooth = suavizado_konno_ohmachi(f, Pxx)
+    Pyy_smooth = suavizado_konno_ohmachi(f, Pyy)
     
     # 5. Calcular ratio H/V
     # Evitar división por cero
@@ -295,14 +297,71 @@ def metodo_nakamura(datos_x, datos_y, datos_z, fs):
         periodos_fundamentales = []
     
     # 7. Calcular intervalos de confianza
-    # Usar la variabilidad espectral para estimar la incertidumbre
     factor_freq = 1 / (1 + f)
     hv_std = 0.2 * hv_ratio * factor_freq  # 20% de variabilidad típica
     
     hv_mas_std = hv_ratio + hv_std
     hv_menos_std = hv_ratio - hv_std
     
-    return f, hv_ratio, hv_mas_std, hv_menos_std, frecuencias_fundamentales, periodos_fundamentales
+    return (f, hv_ratio, hv_mas_std, hv_menos_std, frecuencias_fundamentales, periodos_fundamentales, 
+            Pxx_smooth, Pyy_smooth, Pzz_smooth, Phh_smooth, datos_x, datos_y, datos_z)
+
+def plot_nakamura_workflow(datos_x, datos_y, datos_z, f, Pxx, Pyy, Pzz, Phh, hv_ratio, fs):
+    """
+    Función para visualizar todo el proceso del método de Nakamura
+    """
+    # Crear figura con subplots
+    fig = make_subplots(
+        rows=4, cols=2,
+        subplot_titles=(
+            'Microtrepidaciones E-W', 'Microtrepidaciones N-S',
+            'Espectro E-W', 'Espectro N-S',
+            'Espectro Horizontal Promedio', 'Espectro Vertical',
+            'Relación espectral H/V', ''
+        ),
+        vertical_spacing=0.12,
+        horizontal_spacing=0.1
+    )
+    
+    # 1. Series de tiempo
+    tiempo = np.arange(len(datos_x)) / fs
+    fig.add_trace(go.Scatter(x=tiempo, y=datos_x, name='E-W', line=dict(color='green')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=tiempo, y=datos_y, name='N-S', line=dict(color='blue')), row=1, col=2)
+    
+    # 2. Espectros individuales
+    fig.add_trace(go.Scatter(x=f, y=Pxx, name='Espectro E-W', line=dict(color='blue')), row=2, col=1)
+    fig.add_trace(go.Scatter(x=f, y=Pyy, name='Espectro N-S', line=dict(color='blue')), row=2, col=2)
+    
+    # 3. Espectro horizontal promedio y vertical
+    fig.add_trace(go.Scatter(x=f, y=Phh, name='H promedio', line=dict(color='blue')), row=3, col=1)
+    fig.add_trace(go.Scatter(x=f, y=Pzz, name='Vertical', line=dict(color='blue')), row=3, col=2)
+    
+    # 4. Relación H/V
+    fig.add_trace(go.Scatter(x=f, y=hv_ratio, name='H/V', line=dict(color='blue')), row=4, col=1)
+    
+    # Actualizar ejes y diseño
+    for i in range(1, 5):
+        if i == 1:
+            fig.update_xaxes(title_text='Tiempo (s)', row=i, col=1)
+            fig.update_xaxes(title_text='Tiempo (s)', row=i, col=2)
+            fig.update_yaxes(title_text='Amplitud', row=i, col=1)
+            fig.update_yaxes(title_text='Amplitud', row=i, col=2)
+        else:
+            fig.update_xaxes(title_text='Frecuencia (Hz)', type='log', row=i, col=1)
+            fig.update_xaxes(title_text='Frecuencia (Hz)', type='log', row=i, col=2)
+            fig.update_yaxes(title_text='Amplitud', type='log', row=i, col=1)
+            fig.update_yaxes(title_text='Amplitud', type='log', row=i, col=2)
+    
+    # Actualizar diseño general
+    fig.update_layout(
+        height=1200,
+        showlegend=True,
+        title_text="Proceso completo del método de Nakamura",
+    )
+    
+    return fig
+
+
 
 def plot_espectros(f, Pxx, Pyy, Pzz, Phh):
     """
@@ -523,48 +582,54 @@ def main():
 
             num_rutinas_fft = st.number_input("Número de rutinas FFT a realizar", min_value=1, max_value=10, value=5)
 
-            if st.button("Analizar datos"):
-                canales = ['x', 'y', 'z'] if canal_seleccionado == 'Todos los canales' else [canal_seleccionado]
-                resultados, fs, columna_tiempo = procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_taper)
-                fig = graficar_resultados(resultados, fs, canales)
-                st.plotly_chart(fig)
-
-                if canal_seleccionado == 'Todos los canales':
-                    st.subheader("Análisis H/V (Método de Nakamura)")
-                    
-                    # Obtener datos filtrados
-                    datos_x = resultados['x']['serie_filtrada']
-                    datos_y = resultados['y']['serie_filtrada']
-                    datos_z = resultados['z']['serie_filtrada']
-                    
-                    # Realizar análisis H/V
-                    f, hv_ratio, hv_mas_std, hv_menos_std, frecuencias_fundamentales, periodos_fundamentales = metodo_nakamura(
-                        datos_x, datos_y, datos_z, fs
-                    )
-                    
-                    if f is not None and len(frecuencias_fundamentales) > 0:
-                        # Graficar resultado H/V
-                        fig_hv = plot_hv_degtra_style(f, hv_ratio, hv_mas_std, hv_menos_std, frecuencias_fundamentales)
-                        st.plotly_chart(fig_hv)
-                        
-                        # Mostrar resultados
-                        st.write("Frecuencias fundamentales identificadas:")
-                        for i, (freq, period) in enumerate(zip(frecuencias_fundamentales, periodos_fundamentales)):
-                            st.write(f"Pico {i+1}:")
-                            st.write(f"  Frecuencia: {freq:.2f} Hz")
-                            st.write(f"  Periodo: {period:.2f} segundos")
-                        
-                        # Comparar con la frecuencia del acelerómetro
-                        frecuencia_acelerometro = 1.4  # Hz
-                        st.write(f"Frecuencia fundamental del acelerómetro: {frecuencia_acelerometro} Hz")
-                        
-                        if frecuencias_fundamentales[0] < frecuencia_acelerometro:
-                            st.success("La frecuencia fundamental del suelo es menor que la del acelerómetro, lo que indica que las mediciones son confiables.")
-                        else:
-                            st.warning("La frecuencia fundamental del suelo es mayor o igual que la del acelerómetro. Esto podría afectar la confiabilidad de las mediciones en frecuencias más altas.")
-                    
-                    else:
-                        st.error("No se pudieron identificar frecuencias fundamentales válidas en el análisis.")
+if st.button("Analizar datos"):
+    canales = ['x', 'y', 'z'] if canal_seleccionado == 'Todos los canales' else [canal_seleccionado]
+    resultados, fs, columna_tiempo = procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_taper)
+    
+    if canal_seleccionado == 'Todos los canales':
+        st.subheader("Análisis H/V (Método de Nakamura)")
+        
+        # Obtener datos filtrados
+        datos_x = resultados['x']['serie_filtrada']
+        datos_y = resultados['y']['serie_filtrada']
+        datos_z = resultados['z']['serie_filtrada']
+        
+        # Realizar análisis H/V
+        (f, hv_ratio, hv_mas_std, hv_menos_std, frecuencias_fundamentales, periodos_fundamentales,
+         Pxx, Pyy, Pzz, Phh, datos_x_proc, datos_y_proc, datos_z_proc) = metodo_nakamura(
+            datos_x, datos_y, datos_z, fs
+        )
+        
+        if f is not None and len(frecuencias_fundamentales) > 0:
+            # Mostrar el proceso completo
+            fig_workflow = plot_nakamura_workflow(
+                datos_x_proc, datos_y_proc, datos_z_proc,
+                f, Pxx, Pyy, Pzz, Phh, hv_ratio, fs
+            )
+            st.plotly_chart(fig_workflow)
+            
+            # Graficar resultado H/V final con estilo DEGTRA
+            fig_hv = plot_hv_degtra_style(f, hv_ratio, hv_mas_std, hv_menos_std, frecuencias_fundamentales)
+            st.plotly_chart(fig_hv)
+            
+            # Mostrar resultados
+            st.write("Frecuencias fundamentales identificadas:")
+            for i, (freq, period) in enumerate(zip(frecuencias_fundamentales, periodos_fundamentales)):
+                st.write(f"Pico {i+1}:")
+                st.write(f"  Frecuencia: {freq:.2f} Hz")
+                st.write(f"  Periodo: {period:.2f} segundos")
+            
+            # Comparar con la frecuencia del acelerómetro
+            frecuencia_acelerometro = 1.4  # Hz
+            st.write(f"Frecuencia fundamental del acelerómetro: {frecuencia_acelerometro} Hz")
+            
+            if frecuencias_fundamentales[0] < frecuencia_acelerometro:
+                st.success("La frecuencia fundamental del suelo es menor que la del acelerómetro, lo que indica que las mediciones son confiables.")
+            else:
+                st.warning("La frecuencia fundamental del suelo es mayor o igual que la del acelerómetro. Esto podría afectar la confiabilidad de las mediciones en frecuencias más altas.")
+        
+        else:
+            st.error("No se pudieron identificar frecuencias fundamentales válidas en el análisis.")
 
     st.sidebar.header("Instrucciones")
     st.sidebar.markdown("""
