@@ -583,6 +583,26 @@ def main():
             num_rutinas_fft = st.number_input("Número de rutinas FFT a realizar", min_value=1, max_value=10, value=5)
 
         if st.button("Analizar datos"):
+            # En la sección principal donde se realiza el análisis:
+
+
+            canales = ['x', 'y', 'z'] if canal_seleccionado == 'Todos los canales' else [canal_seleccionado]
+            resultados, fs, columna_tiempo = procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_taper)
+            fig = graficar_resultados(resultados, fs, canales)
+            st.plotly_chart(fig)
+
+            if canal_seleccionado == 'Todos los canales':
+                st.subheader("Análisis H/V (Método de Nakamura)")
+                
+                # Obtener datos filtrados
+                datos_x = resultados['x']['serie_filtrada']
+                datos_y = resultados['y']['serie_filtrada']
+                datos_z = resultados['z']['serie_filtrada']
+                
+                # Realizar análisis H/V
+                f, hv_ratio, hv_mas_std, hv_menos_std, frecuencias_fundamentales, periodos_fundamentales = metodo_nakamura(
+                    datos_x, datos_y, datos_z, fs
+                )
             canales = ['x', 'y', 'z'] if canal_seleccionado == 'Todos los canales' else [canal_seleccionado]
             resultados, fs, columna_tiempo = procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_taper)
             
