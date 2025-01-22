@@ -208,74 +208,104 @@ def graficar_resultados(resultados, fs, canales):
     return fig
 
 def metodo_nakamura(datos_x, datos_y, datos_z, fs):
-    # Asegurar que las señales tengan la misma longitud
-    min_length = min(len(datos_x), len(datos_y), len(datos_z))
-    datos_x = datos_x[:min_length]
-    datos_y = datos_y[:min_length]
-    datos_z = datos_z[:min_length]
+    from scipy.signal import savgol_filter
+    
+    # Asegurar que todos los componentes tengan la misma longitud
+    longitud_min = min(len(datos_x), len(datos_y), len(datos_z))
+    datos_x = datos_x[:longitud_min]
+    datos_y = datos_y[:longitud_min]
+    datos_z = datos_z[:longitud_min]
     
     # Definir parámetros de ventana
-    window_length = int(fs * 25)  # Ventanas de 25 segundos
-    overlap = 0.5  # 50% de solapamiento
-    step = int(window_length * (1 - overlap))
-    n_windows = (min_length - window_length) // step + 1
-
-    hv_ratios = []
-    frequencies = None
-
-    for i in range(n_windows):
-        start_idx = i * step
-        end_idx = start_idx + window_length
-
-        # Ventanas sincronizadas
-        window_x = datos_x[start_idx:end_idx]
-        window_y = datos_y[start_idx:end_idx]
-        window_z = datos_z[start_idx:end_idx]
-
-        # Aplicar taper
-        taper = np.hanning(window_length)
-        window_x *= taper
-        window_y *= taper
-        window_z *= taper
-
-        # Espectros de potencia
-        f, Pxx = welch(window_x, fs, nperseg=window_length, noverlap=None, detrend='constant')
-        _, Pyy = welch(window_y, fs, nperseg=window_length, noverlap=None, detrend='constant')
-        _, Pzz = welch(window_z, fs, nperseg=window_length, noverlap=None, detrend='constant')
-
-        # Relación H/V
-        hv = np.sqrt((Pxx + Pyy) / (2 * Pzz))
-        hv_ratios.append(hv)
+    longitud_ventana = int(fs * 25)  # ventanas de 25 segundos
+    solapamiento = 0.5  # 50% de solapamiento
+    paso = int(longitud_ventana * (1 - solapamiento))
+    
+    # Calcular número de ventanas
+    n_ventanas = (longitud_min - longitud_ventana) // paso + 1
+    
+    # Inicializar arrays para almacenar ratios H/V para cada ventana
+    ratios_hv = []
+    frecuencias = None
+    
+    # Procesar cada ventana
+    for i in range(n_ventanas):
+        inicio_idx = i * paso
+        fin_idx = inicio_idx + longitud_ventana
         
-        if frequencies is None:
-            frequencies = f
-
+        # Obtener ventanas sincronizadas para todos los componentes
+        ventana_x = datos_x[inicio_idx:fin_idx]
+        ventana_y = datos_y[inicio_idx:fin_idx]
+        ventana_z = datos_z[inicio_idx:fin_idx]
+        
+        # Aplicar taper a las ventanas
+        taper = np.hanning(longitud_ventana)
+        ventana_x = ventana_x * taper
+        ventana_y = ventana_y * taper
+        ventana_z = ventana_z * taper
+        
+        # Calcular espectros para esta ventana
+        f, Pxx = signal.welch(ventana_x, fs, nperseg=longitud_ventana, noverlap=None, detrend='constant')
+        _, Pyy = signal.welch(ventana_y, fs, nperseg=longitud_ventana, noverlap=None, detrend='constant')
+        _, Pzz = signal.welch(ventana_z, fs, nperseg=longitud_ventana, noverlap=None, detrend='constant')
+        
+        # Calcular ratio H/V para esta ventana
+        hv = np.sqrt((Pxx + Pyy) / (2 * Pzz))
+        ratios_hv.append(hv)
+        
+        if frecuencias is None:
+            frecuencias = f
+    
+    # Convertir a array numpy para cálculos más fáciles
+    ratios_hv = np.array(ratios_hv)
+    
     # Calcular media y desviación estándar
-    hv_ratios = np.array(hv_ratios)
-    hv_mean = np.mean(hv_ratios, axis=0)
-    hv_std = np.std(hv_ratios, axis=0)
-
-    # Suavizado Konno-Ohmachi
-    hv_smooth = konno_ohmachi_smooth(frequencies, hv_mean)
-
-    # Ajustar desviaciones estándar
-    freq_factor = 1 / (1 + frequencies)
-    hv_std_adjusted = hv_std * freq_factor
-    hv_plus_std = hv_smooth + hv_std_adjusted
-    hv_minus_std = hv_smooth - hv_std_adjusted
-
-    # Detectar picos
-    peaks, _ = find_peaks(hv_smooth, height=np.mean(hv_smooth), distance=int(len(frequencies)/10))
-    peak_amplitudes = hv_smooth[peaks]
-    sorted_peaks = peaks[np.argsort(peak_amplitudes)[::-1]]
-    fundamental_frequencies = frequencies[sorted_peaks]
-
-    # Filtrar picos por rango esperado
-    expected_range = (fundamental_frequencies >= 0.5) & (fundamental_frequencies <= 2.0)
-    fundamental_frequencies = fundamental_frequencies[expected_range]
-    fundamental_periods = 1 / fundamental_frequencies
-
-    return frequencies, hv_smooth, hv_plus_std, hv_minus_std, fundamental_frequencies, fundamental_periods
+    hv_media = np.mean(ratios_hv, axis=0)
+    hv_std = np.std(ratios_hv, axis=0)
+    
+    # Aplicar suavizado Konno-Ohmachi a la curva media
+    def suavizado_konno_ohmachi(freq, spec, b=40):
+        suavizado = np.zeros_like(spec)
+        for i, fc in enumerate(freq):
+            if fc == 0:
+                continue
+            w = np.zeros_like(freq)
+            wb = np.abs(np.log10(freq/fc))
+            w = (np.sin(b * wb) / (b * wb))**4
+            w[np.isnan(w)] = 1
+            w = w / np.sum(w)
+            suavizado[i] = np.sum(spec * w)
+        return suavizado
+    
+    hv_suave = suavizado_konno_ohmachi(frecuencias, hv_media)
+    
+    # Calcular límites de confianza
+    # La desviación estándar debe ser menor en frecuencias más altas
+    factor_freq = 1 / (1 + frecuencias)  # Factor decrece con la frecuencia
+    hv_std_ajustada = hv_std * factor_freq
+    
+    hv_mas_std = hv_suave + hv_std_ajustada
+    hv_menos_std = hv_suave - hv_std_ajustada
+    
+    # Encontrar picos en la curva suavizada
+    from scipy.signal import find_peaks
+    picos, _ = find_peaks(hv_suave, height=np.mean(hv_suave), distance=int(len(frecuencias)/10))
+    
+    # Ordenar picos por amplitud
+    amplitudes_picos = hv_suave[picos]
+    indices_picos_ordenados = np.argsort(amplitudes_picos)[::-1]
+    picos_ordenados = picos[indices_picos_ordenados]
+    
+    # Obtener los picos principales
+    picos_principales = picos_ordenados[:3]
+    frecuencias_fundamentales = frecuencias[picos_principales]
+    
+    # Filtrar frecuencias por debajo de 0.5 Hz ya que podrían no ser confiables
+    mascara = frecuencias_fundamentales >= 0.5
+    frecuencias_fundamentales = frecuencias_fundamentales[mascara]
+    periodos_fundamentales = 1 / frecuencias_fundamentales
+    
+    return frecuencias, hv_suave, hv_mas_std, hv_menos_std, frecuencias_fundamentales, periodos_fundamentales
 
 def seleccionar_secciones_aleatorias(datos, fs, num_secciones=5, duracion_seccion=30):
     longitud_seccion = int(duracion_seccion * fs)
@@ -518,20 +548,20 @@ def main():
                         st.plotly_chart(fig_fft)
 
                         # H/V analysis using improved Nakamura method
-                        f, hv_smooth, hv_plus_std, hv_minus_std, fundamental_frequencies_section, fundamental_periods_section = metodo_nakamura(datos_x, datos_y, datos_z, fs)
+                        f, hv_suave, hv_mas_std, hv_menos_std, frecuencias_fundamentales_section, periodos_fundamentales_section = metodo_nakamura(datos_x, datos_y, datos_z, fs)
 
-                        fig_hv = plot_hv_degtra_style(f, hv_smooth, hv_plus_std, hv_minus_std, fundamental_frequencies_section)
+                        fig_hv = plot_hv_degtra_style(f, hv_suave, hv_mas_std, hv_menos_std, frecuencias_fundamentales_section)
                         st.plotly_chart(fig_hv)
 
                         st.write("Frecuencias fundamentales identificadas:")
-                        for k, (freq, period) in enumerate(zip(fundamental_frequencies_section, fundamental_periods_section)):
+                        for k, (freq, period) in enumerate(zip(frecuencias_fundamentales_section, periodos_fundamentales_section)):
                             st.write(f"Pico {k+1}:")
                             st.write(f"  Frecuencia: {freq:.2f} Hz")
                             st.write(f"  Periodo: {period:.2f} segundos")
 
 
-                        frecuencias_fundamentales.append(fundamental_frequencies_section)
-                        periodos_fundamentales.append(fundamental_periods_section)
+                        frecuencias_fundamentales.append(frecuencias_fundamentales_section)
+                        periodos_fundamentales.append(periodos_fundamentales_section)
 
                     # Calculate and display average fundamental frequency and period
                     st.subheader("Resumen de resultados")
