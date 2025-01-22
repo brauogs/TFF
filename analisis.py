@@ -209,57 +209,103 @@ def graficar_resultados(resultados, fs, canales):
 
 def metodo_nakamura(datos_x, datos_y, datos_z, fs):
     from scipy.signal import savgol_filter
-    from scipy.stats import chi2
     
-    # Calculate power spectral density for each component
-    f, Pxx = signal.welch(datos_x, fs, nperseg=min(len(datos_x), int(fs * 60)))
-    _, Pyy = signal.welch(datos_y, fs, nperseg=min(len(datos_y), int(fs * 60)))
-    _, Pzz = signal.welch(datos_z, fs, nperseg=min(len(datos_z), int(fs * 60)))
+    # Ensure all components have the same length
+    min_length = min(len(datos_x), len(datos_y), len(datos_z))
+    datos_x = datos_x[:min_length]
+    datos_y = datos_y[:min_length]
+    datos_z = datos_z[:min_length]
     
-    # Calculate H/V ratio
-    hv = np.sqrt((Pxx + Pyy) / (2 * Pzz))
+    # Define window parameters
+    window_length = int(fs * 25)  # 25 second windows
+    overlap = 0.5  # 50% overlap
+    step = int(window_length * (1 - overlap))
     
-    # Smooth H/V curve using Konno-Ohmachi smoothing
-    def konno_ohmachi_smooth(f, hv, b=40):
-        smoothed = np.zeros_like(hv)
-        for i, fc in enumerate(f):
-            w = np.zeros_like(f)
-            w[f > 0] = (np.sin(b * np.log10(f[f > 0]/fc)) / (b * np.log10(f[f > 0]/fc)))**4
-            w[f <= 0] = 0
+    # Calculate number of windows
+    n_windows = (min_length - window_length) // step + 1
+    
+    # Initialize arrays to store H/V ratios for each window
+    hv_ratios = []
+    frequencies = None
+    
+    # Process each window
+    for i in range(n_windows):
+        start_idx = i * step
+        end_idx = start_idx + window_length
+        
+        # Get synchronized windows for all components
+        window_x = datos_x[start_idx:end_idx]
+        window_y = datos_y[start_idx:end_idx]
+        window_z = datos_z[start_idx:end_idx]
+        
+        # Apply taper to windows
+        taper = np.hanning(window_length)
+        window_x = window_x * taper
+        window_y = window_y * taper
+        window_z = window_z * taper
+        
+        # Calculate spectra for this window
+        f, Pxx = signal.welch(window_x, fs, nperseg=window_length, noverlap=None, detrend='constant')
+        _, Pyy = signal.welch(window_y, fs, nperseg=window_length, noverlap=None, detrend='constant')
+        _, Pzz = signal.welch(window_z, fs, nperseg=window_length, noverlap=None, detrend='constant')
+        
+        # Calculate H/V ratio for this window
+        hv = np.sqrt((Pxx + Pyy) / (2 * Pzz))
+        hv_ratios.append(hv)
+        
+        if frequencies is None:
+            frequencies = f
+    
+    # Convert to numpy array for easier calculations
+    hv_ratios = np.array(hv_ratios)
+    
+    # Calculate mean and standard deviation
+    hv_mean = np.mean(hv_ratios, axis=0)
+    hv_std = np.std(hv_ratios, axis=0)
+    
+    # Apply Konno-Ohmachi smoothing to mean curve
+    def konno_ohmachi_smooth(freq, spec, b=40):
+        smoothed = np.zeros_like(spec)
+        for i, fc in enumerate(freq):
+            if fc == 0:
+                continue
+            w = np.zeros_like(freq)
+            wb = np.abs(np.log10(freq/fc))
+            w = (np.sin(b * wb) / (b * wb))**4
             w[np.isnan(w)] = 1
             w = w / np.sum(w)
-            smoothed[i] = np.sum(hv * w)
+            smoothed[i] = np.sum(spec * w)
         return smoothed
     
-    hv_smooth = konno_ohmachi_smooth(f, hv)
-    
-    # Calculate standard deviation using sliding window
-    window_size = 5
-    std_dev = np.zeros_like(hv_smooth)
-    for i in range(len(hv_smooth)):
-        start_idx = max(0, i - window_size//2)
-        end_idx = min(len(hv_smooth), i + window_size//2 + 1)
-        std_dev[i] = np.std(hv[start_idx:end_idx])
+    hv_smooth = konno_ohmachi_smooth(frequencies, hv_mean)
     
     # Calculate confidence bounds
-    hv_plus_std = hv_smooth + std_dev
-    hv_minus_std = hv_smooth - std_dev
+    # Standard deviation should be smaller at higher frequencies
+    freq_factor = 1 / (1 + frequencies)  # Factor decreases with frequency
+    hv_std_adjusted = hv_std * freq_factor
     
-    # Find peaks
+    hv_plus_std = hv_smooth + hv_std_adjusted
+    hv_minus_std = hv_smooth - hv_std_adjusted
+    
+    # Find peaks in smoothed curve
     from scipy.signal import find_peaks
-    peaks, _ = find_peaks(hv_smooth, height=np.mean(hv_smooth), distance=int(len(f)/10))
+    peaks, _ = find_peaks(hv_smooth, height=np.mean(hv_smooth), distance=int(len(frequencies)/10))
     
     # Sort peaks by amplitude
     peak_amplitudes = hv_smooth[peaks]
     sorted_peak_indices = np.argsort(peak_amplitudes)[::-1]
     sorted_peaks = peaks[sorted_peak_indices]
     
-    # Get the top 3 peaks
+    # Get the top peaks
     top_peaks = sorted_peaks[:3]
-    fundamental_frequencies = f[top_peaks]
+    fundamental_frequencies = frequencies[top_peaks]
+    
+    # Filter out frequencies below 0.5 Hz as they might be unreliable
+    mask = fundamental_frequencies >= 0.5
+    fundamental_frequencies = fundamental_frequencies[mask]
     fundamental_periods = 1 / fundamental_frequencies
     
-    return f, hv_smooth, hv_plus_std, hv_minus_std, fundamental_frequencies, fundamental_periods
+    return frequencies, hv_smooth, hv_plus_std, hv_minus_std, fundamental_frequencies, fundamental_periods
 
 def seleccionar_secciones_aleatorias(datos, fs, num_secciones=5, duracion_seccion=30):
     longitud_seccion = int(duracion_seccion * fs)
@@ -316,7 +362,7 @@ def descargar_datos_procesados(resultados, canales, fs):
 def plot_hv_degtra_style(f, hv_smooth, hv_plus_std, hv_minus_std, fundamental_frequencies):
     fig = go.Figure()
     
-    
+    # Add grid style similar to DEGTRA
     fig.update_layout(
         plot_bgcolor='white',
         xaxis=dict(
@@ -384,7 +430,7 @@ def plot_hv_degtra_style(f, hv_smooth, hv_plus_std, hv_minus_std, fundamental_fr
     
     # Update layout
     fig.update_layout(
-        title="Análisis H/V",
+        title="Análisis H/V (Estilo DEGTRA)",
         showlegend=True,
         legend=dict(
             yanchor="top",
