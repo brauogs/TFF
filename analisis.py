@@ -208,103 +208,73 @@ def graficar_resultados(resultados, fs, canales):
     return fig
 
 def metodo_nakamura(datos_x, datos_y, datos_z, fs):
-    from scipy.signal import savgol_filter
-    
-    # Ensure all components have the same length
+    # Asegurar que las señales tengan la misma longitud
     min_length = min(len(datos_x), len(datos_y), len(datos_z))
     datos_x = datos_x[:min_length]
     datos_y = datos_y[:min_length]
     datos_z = datos_z[:min_length]
     
-    # Define window parameters
-    window_length = int(fs * 25)  # 25 second windows
-    overlap = 0.5  # 50% overlap
+    # Definir parámetros de ventana
+    window_length = int(fs * 25)  # Ventanas de 25 segundos
+    overlap = 0.5  # 50% de solapamiento
     step = int(window_length * (1 - overlap))
-    
-    # Calculate number of windows
     n_windows = (min_length - window_length) // step + 1
-    
-    # Initialize arrays to store H/V ratios for each window
+
     hv_ratios = []
     frequencies = None
-    
-    # Process each window
+
     for i in range(n_windows):
         start_idx = i * step
         end_idx = start_idx + window_length
-        
-        # Get synchronized windows for all components
+
+        # Ventanas sincronizadas
         window_x = datos_x[start_idx:end_idx]
         window_y = datos_y[start_idx:end_idx]
         window_z = datos_z[start_idx:end_idx]
-        
-        # Apply taper to windows
+
+        # Aplicar taper
         taper = np.hanning(window_length)
-        window_x = window_x * taper
-        window_y = window_y * taper
-        window_z = window_z * taper
-        
-        # Calculate spectra for this window
-        f, Pxx = signal.welch(window_x, fs, nperseg=window_length, noverlap=None, detrend='constant')
-        _, Pyy = signal.welch(window_y, fs, nperseg=window_length, noverlap=None, detrend='constant')
-        _, Pzz = signal.welch(window_z, fs, nperseg=window_length, noverlap=None, detrend='constant')
-        
-        # Calculate H/V ratio for this window
+        window_x *= taper
+        window_y *= taper
+        window_z *= taper
+
+        # Espectros de potencia
+        f, Pxx = welch(window_x, fs, nperseg=window_length, noverlap=None, detrend='constant')
+        _, Pyy = welch(window_y, fs, nperseg=window_length, noverlap=None, detrend='constant')
+        _, Pzz = welch(window_z, fs, nperseg=window_length, noverlap=None, detrend='constant')
+
+        # Relación H/V
         hv = np.sqrt((Pxx + Pyy) / (2 * Pzz))
         hv_ratios.append(hv)
         
         if frequencies is None:
             frequencies = f
-    
-    # Convert to numpy array for easier calculations
+
+    # Calcular media y desviación estándar
     hv_ratios = np.array(hv_ratios)
-    
-    # Calculate mean and standard deviation
     hv_mean = np.mean(hv_ratios, axis=0)
     hv_std = np.std(hv_ratios, axis=0)
-    
-    # Apply Konno-Ohmachi smoothing to mean curve
-    def konno_ohmachi_smooth(freq, spec, b=40):
-        smoothed = np.zeros_like(spec)
-        for i, fc in enumerate(freq):
-            if fc == 0:
-                continue
-            w = np.zeros_like(freq)
-            wb = np.abs(np.log10(freq/fc))
-            w = (np.sin(b * wb) / (b * wb))**4
-            w[np.isnan(w)] = 1
-            w = w / np.sum(w)
-            smoothed[i] = np.sum(spec * w)
-        return smoothed
-    
+
+    # Suavizado Konno-Ohmachi
     hv_smooth = konno_ohmachi_smooth(frequencies, hv_mean)
-    
-    # Calculate confidence bounds
-    # Standard deviation should be smaller at higher frequencies
-    freq_factor = 1 / (1 + frequencies)  # Factor decreases with frequency
+
+    # Ajustar desviaciones estándar
+    freq_factor = 1 / (1 + frequencies)
     hv_std_adjusted = hv_std * freq_factor
-    
     hv_plus_std = hv_smooth + hv_std_adjusted
     hv_minus_std = hv_smooth - hv_std_adjusted
-    
-    # Find peaks in smoothed curve
-    from scipy.signal import find_peaks
+
+    # Detectar picos
     peaks, _ = find_peaks(hv_smooth, height=np.mean(hv_smooth), distance=int(len(frequencies)/10))
-    
-    # Sort peaks by amplitude
     peak_amplitudes = hv_smooth[peaks]
-    sorted_peak_indices = np.argsort(peak_amplitudes)[::-1]
-    sorted_peaks = peaks[sorted_peak_indices]
-    
-    # Get the top peaks
-    top_peaks = sorted_peaks[:3]
-    fundamental_frequencies = frequencies[top_peaks]
-    
-    # Filter out frequencies below 0.5 Hz as they might be unreliable
-    mask = fundamental_frequencies >= 0.5
-    fundamental_frequencies = fundamental_frequencies[mask]
+    sorted_peaks = peaks[np.argsort(peak_amplitudes)[::-1]]
+    fundamental_frequencies = frequencies[sorted_peaks]
+
+    # Filtrar picos por rango esperado
+    expected_range = (fundamental_frequencies >= 0.5) & (fundamental_frequencies <= 2.0)
+    fundamental_frequencies = fundamental_frequencies[expected_range]
     fundamental_periods = 1 / fundamental_frequencies
-    
+
     return frequencies, hv_smooth, hv_plus_std, hv_minus_std, fundamental_frequencies, fundamental_periods
 
 def seleccionar_secciones_aleatorias(datos, fs, num_secciones=5, duracion_seccion=30):
