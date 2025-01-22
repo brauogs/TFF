@@ -208,7 +208,11 @@ def graficar_resultados(resultados, fs, canales):
     return fig
 
 def metodo_nakamura(datos_x, datos_y, datos_z, fs):
-    from scipy.signal import savgol_filter
+    """
+    Implementación mejorada del método de Nakamura H/V siguiendo las directrices específicas.
+    """
+    from scipy.signal import savgol_filter, detrend
+    import numpy as np
     
     # Asegurar que todos los componentes tengan la misma longitud
     longitud_min = min(len(datos_x), len(datos_y), len(datos_z))
@@ -226,7 +230,7 @@ def metodo_nakamura(datos_x, datos_y, datos_z, fs):
         longitud_ventana = longitud_min
         st.warning(f"La longitud de ventana se ha ajustado a {longitud_ventana/fs:.2f} segundos debido a la longitud limitada de datos")
     
-    solapamiento = 0.5  # 50% de solapamiento
+    solapamiento = 0.05  # 5% de solapamiento como especificado
     paso = int(longitud_ventana * (1 - solapamiento))
     
     # Calcular número de ventanas
@@ -235,9 +239,34 @@ def metodo_nakamura(datos_x, datos_y, datos_z, fs):
         st.error("No hay suficientes datos para realizar el análisis H/V")
         return None, None, None, None, [], []
     
-    # Inicializar arrays para almacenar ratios H/V para cada ventana
+    # Inicializar arrays para almacenar ratios H/V válidos
     ratios_hv = []
     frecuencias = None
+    
+    def validar_ventana(ventana_x, ventana_y, ventana_z):
+        """
+        Valida si una ventana es adecuada para el análisis.
+        Descarta ventanas con picos excesivos o eventos sísmicos anómalos.
+        """
+        # Calcular estadísticas de la ventana
+        std_x = np.std(ventana_x)
+        std_y = np.std(ventana_y)
+        std_z = np.std(ventana_z)
+        
+        # Criterios de validación
+        max_std_ratio = 4.0  # Máxima relación entre desviaciones estándar
+        max_amplitude_factor = 3.0  # Factor máximo respecto a la media
+        
+        # Verificar relaciones entre componentes
+        if (max(std_x, std_y, std_z) / min(std_x, std_y, std_z)) > max_std_ratio:
+            return False
+            
+        # Verificar picos excesivos
+        for ventana in [ventana_x, ventana_y, ventana_z]:
+            if np.max(np.abs(ventana)) > max_amplitude_factor * np.mean(np.abs(ventana)):
+                return False
+                
+        return True
     
     # Procesar cada ventana
     for i in range(n_ventanas):
@@ -249,36 +278,59 @@ def metodo_nakamura(datos_x, datos_y, datos_z, fs):
         ventana_y = datos_y[inicio_idx:fin_idx]
         ventana_z = datos_z[inicio_idx:fin_idx]
         
-        # Aplicar taper a las ventanas
-        taper = np.hanning(longitud_ventana)
-        ventana_x = ventana_x * taper
-        ventana_y = ventana_y * taper
-        ventana_z = ventana_z * taper
+        # Validar la calidad de la ventana
+        if not validar_ventana(ventana_x, ventana_y, ventana_z):
+            continue
+        
+        # Preprocesamiento de las ventanas
+        for ventana in [ventana_x, ventana_y, ventana_z]:
+            # Remover tendencia
+            ventana = detrend(ventana)
+            # Aplicar taper
+            ventana = ventana * np.hanning(longitud_ventana)
         
         # Calcular espectros para esta ventana
-        f, Pxx = signal.welch(ventana_x, fs, nperseg=longitud_ventana, noverlap=None, detrend='constant')
-        _, Pyy = signal.welch(ventana_y, fs, nperseg=longitud_ventana, noverlap=None, detrend='constant')
-        _, Pzz = signal.welch(ventana_z, fs, nperseg=longitud_ventana, noverlap=None, detrend='constant')
+        nperseg = longitud_ventana
+        noverlap = int(nperseg * 0.05)  # 5% overlap para el análisis espectral
+        
+        f, Pxx = signal.welch(ventana_x, fs, nperseg=nperseg, noverlap=noverlap, detrend='constant')
+        _, Pyy = signal.welch(ventana_y, fs, nperseg=nperseg, noverlap=noverlap, detrend='constant')
+        _, Pzz = signal.welch(ventana_z, fs, nperseg=nperseg, noverlap=noverlap, detrend='constant')
+        
+        # Filtrar frecuencias fuera del rango de interés (0.5 - 10 Hz)
+        mask = (f >= 0.5) & (f <= 10)
+        f = f[mask]
+        Pxx = Pxx[mask]
+        Pyy = Pyy[mask]
+        Pzz = Pzz[mask]
         
         # Evitar división por cero
-        epsilon = 1e-10  # Valor pequeño para evitar división por cero
+        epsilon = 1e-10
         Pzz = np.where(Pzz < epsilon, epsilon, Pzz)
         
         # Calcular ratio H/V para esta ventana
         hv = np.sqrt((Pxx + Pyy) / (2 * Pzz))
+        
+        # Aplicar suavizado adicional para reducir el ruido
+        hv = savgol_filter(hv, window_length=7, polyorder=3)
+        
         ratios_hv.append(hv)
         
         if frecuencias is None:
             frecuencias = f
     
-    # Convertir a array numpy para cálculos más fáciles
+    if not ratios_hv:
+        st.error("No se encontraron ventanas válidas para el análisis")
+        return None, None, None, None, [], []
+    
+    # Convertir a array numpy para cálculos
     ratios_hv = np.array(ratios_hv)
     
     # Calcular media y desviación estándar
     hv_media = np.mean(ratios_hv, axis=0)
     hv_std = np.std(ratios_hv, axis=0)
     
-    # Aplicar suavizado Konno-Ohmachi a la curva media
+    # Aplicar suavizado Konno-Ohmachi
     def suavizado_konno_ohmachi(freq, spec, b=40):
         suavizado = np.zeros_like(spec)
         for i, fc in enumerate(freq):
@@ -295,42 +347,31 @@ def metodo_nakamura(datos_x, datos_y, datos_z, fs):
     hv_suave = suavizado_konno_ohmachi(frecuencias, hv_media)
     
     # Calcular límites de confianza
-    # La desviación estándar debe ser menor en frecuencias más altas
-    factor_freq = 1 / (1 + frecuencias)  # Factor decrece con la frecuencia
+    factor_freq = 1 / (1 + frecuencias)
     hv_std_ajustada = hv_std * factor_freq
     
     hv_mas_std = hv_suave + hv_std_ajustada
     hv_menos_std = hv_suave - hv_std_ajustada
     
     # Encontrar picos en la curva suavizada
-    from scipy.signal import find_peaks
-    picos, _ = find_peaks(hv_suave, height=np.mean(hv_suave), distance=int(len(frecuencias)/10))
+    # Restringir búsqueda a frecuencias cercanas a 1.4 Hz (±0.5 Hz)
+    rango_busqueda = (frecuencias >= 0.9) & (frecuencias <= 1.9)
+    indices_rango = np.where(rango_busqueda)[0]
     
-    # Verificar si se encontraron picos
-    if len(picos) == 0:
-        st.warning("No se encontraron picos significativos en la curva H/V")
-        return frecuencias, hv_suave, hv_mas_std, hv_menos_std, [], []
-    
-    # Ordenar picos por amplitud
-    amplitudes_picos = hv_suave[picos]
-    indices_picos_ordenados = np.argsort(amplitudes_picos)[::-1]
-    picos_ordenados = picos[indices_picos_ordenados]
-    
-    # Obtener los picos principales
-    picos_principales = picos_ordenados[:3]
-    frecuencias_fundamentales = frecuencias[picos_principales]
-    
-    # Filtrar frecuencias por debajo de 0.5 Hz ya que podrían no ser confiables
-    mascara = frecuencias_fundamentales >= 0.5
-    frecuencias_fundamentales = frecuencias_fundamentales[mascara]
-    
-    if len(frecuencias_fundamentales) == 0:
-        st.warning("No se encontraron frecuencias fundamentales válidas (>= 0.5 Hz)")
-        return frecuencias, hv_suave, hv_mas_std, hv_menos_std, [], []
-    
-    periodos_fundamentales = 1 / frecuencias_fundamentales
+    if len(indices_rango) > 0:
+        # Encontrar el pico más prominente en el rango de interés
+        hv_rango = hv_suave[rango_busqueda]
+        indice_max_local = indices_rango[np.argmax(hv_rango)]
+        frecuencia_fundamental = frecuencias[indice_max_local]
+        frecuencias_fundamentales = [frecuencia_fundamental]
+        periodos_fundamentales = [1 / frecuencia_fundamental]
+    else:
+        st.warning("No se encontraron picos en el rango esperado (0.9-1.9 Hz)")
+        frecuencias_fundamentales = []
+        periodos_fundamentales = []
     
     return frecuencias, hv_suave, hv_mas_std, hv_menos_std, frecuencias_fundamentales, periodos_fundamentales
+
 
 def seleccionar_secciones_aleatorias(datos_x, datos_y, datos_z, fs, num_secciones=5, duracion_seccion=30):
     """
