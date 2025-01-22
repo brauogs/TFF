@@ -212,17 +212,28 @@ def metodo_nakamura(datos_x, datos_y, datos_z, fs):
     
     # Asegurar que todos los componentes tengan la misma longitud
     longitud_min = min(len(datos_x), len(datos_y), len(datos_z))
+    if longitud_min == 0:
+        st.error("No hay datos suficientes para realizar el análisis H/V")
+        return None, None, None, None, [], []
+        
     datos_x = datos_x[:longitud_min]
     datos_y = datos_y[:longitud_min]
     datos_z = datos_z[:longitud_min]
     
     # Definir parámetros de ventana
     longitud_ventana = int(fs * 25)  # ventanas de 25 segundos
+    if longitud_ventana > longitud_min:
+        longitud_ventana = longitud_min
+        st.warning(f"La longitud de ventana se ha ajustado a {longitud_ventana/fs:.2f} segundos debido a la longitud limitada de datos")
+    
     solapamiento = 0.5  # 50% de solapamiento
     paso = int(longitud_ventana * (1 - solapamiento))
     
     # Calcular número de ventanas
     n_ventanas = (longitud_min - longitud_ventana) // paso + 1
+    if n_ventanas < 1:
+        st.error("No hay suficientes datos para realizar el análisis H/V")
+        return None, None, None, None, [], []
     
     # Inicializar arrays para almacenar ratios H/V para cada ventana
     ratios_hv = []
@@ -248,6 +259,10 @@ def metodo_nakamura(datos_x, datos_y, datos_z, fs):
         f, Pxx = signal.welch(ventana_x, fs, nperseg=longitud_ventana, noverlap=None, detrend='constant')
         _, Pyy = signal.welch(ventana_y, fs, nperseg=longitud_ventana, noverlap=None, detrend='constant')
         _, Pzz = signal.welch(ventana_z, fs, nperseg=longitud_ventana, noverlap=None, detrend='constant')
+        
+        # Evitar división por cero
+        epsilon = 1e-10  # Valor pequeño para evitar división por cero
+        Pzz = np.where(Pzz < epsilon, epsilon, Pzz)
         
         # Calcular ratio H/V para esta ventana
         hv = np.sqrt((Pxx + Pyy) / (2 * Pzz))
@@ -291,6 +306,11 @@ def metodo_nakamura(datos_x, datos_y, datos_z, fs):
     from scipy.signal import find_peaks
     picos, _ = find_peaks(hv_suave, height=np.mean(hv_suave), distance=int(len(frecuencias)/10))
     
+    # Verificar si se encontraron picos
+    if len(picos) == 0:
+        st.warning("No se encontraron picos significativos en la curva H/V")
+        return frecuencias, hv_suave, hv_mas_std, hv_menos_std, [], []
+    
     # Ordenar picos por amplitud
     amplitudes_picos = hv_suave[picos]
     indices_picos_ordenados = np.argsort(amplitudes_picos)[::-1]
@@ -303,6 +323,11 @@ def metodo_nakamura(datos_x, datos_y, datos_z, fs):
     # Filtrar frecuencias por debajo de 0.5 Hz ya que podrían no ser confiables
     mascara = frecuencias_fundamentales >= 0.5
     frecuencias_fundamentales = frecuencias_fundamentales[mascara]
+    
+    if len(frecuencias_fundamentales) == 0:
+        st.warning("No se encontraron frecuencias fundamentales válidas (>= 0.5 Hz)")
+        return frecuencias, hv_suave, hv_mas_std, hv_menos_std, [], []
+    
     periodos_fundamentales = 1 / frecuencias_fundamentales
     
     return frecuencias, hv_suave, hv_mas_std, hv_menos_std, frecuencias_fundamentales, periodos_fundamentales
@@ -570,37 +595,49 @@ def main():
 
                         # H/V analysis using improved Nakamura method
                         f, hv_suave, hv_mas_std, hv_menos_std, frecuencias_fundamentales_section, periodos_fundamentales_section = metodo_nakamura(datos_x, datos_y, datos_z, fs)
+                
+                        if f is not None:  # Verificar si el análisis fue exitoso
+                            fig_hv = plot_hv_degtra_style(f, hv_suave, hv_mas_std, hv_menos_std, frecuencias_fundamentales_section)
+                            st.plotly_chart(fig_hv)
 
-                        fig_hv = plot_hv_degtra_style(f, hv_suave, hv_mas_std, hv_menos_std, frecuencias_fundamentales_section)
-                        st.plotly_chart(fig_hv)
+                            if len(frecuencias_fundamentales_section) > 0:
+                                st.write("Frecuencias fundamentales identificadas:")
+                                for k, (freq, period) in enumerate(zip(frecuencias_fundamentales_section, periodos_fundamentales_section)):
+                                    st.write(f"Pico {k+1}:")
+                                    st.write(f"  Frecuencia: {freq:.2f} Hz")
+                                    st.write(f"  Periodo: {period:.2f} segundos")
+                        
+                                frecuencias_fundamentales.append(frecuencias_fundamentales_section)
+                                periodos_fundamentales.append(periodos_fundamentales_section)
 
-                        st.write("Frecuencias fundamentales identificadas:")
-                        for k, (freq, period) in enumerate(zip(frecuencias_fundamentales_section, periodos_fundamentales_section)):
-                            st.write(f"Pico {k+1}:")
-                            st.write(f"  Frecuencia: {freq:.2f} Hz")
-                            st.write(f"  Periodo: {period:.2f} segundos")
+                    # Calcular y mostrar promedios solo si hay resultados válidos
+                    if frecuencias_fundamentales:
+                        st.subheader("Resumen de resultados")
+                        for i in range(min(3, max(len(f) for f in frecuencias_fundamentales))):
+                            # Obtener solo las frecuencias válidas para este índice
+                            freqs_validas = [f[i] for f in frecuencias_fundamentales if i < len(f)]
+                            periodos_validos = [p[i] for p in periodos_fundamentales if i < len(p)]
+                            
+                            if freqs_validas:  # Solo mostrar si hay frecuencias válidas
+                                promedio_frecuencia = np.mean(freqs_validas)
+                                promedio_periodo = np.mean(periodos_validos)
+                                st.write(f"Pico {i+1}:")
+                                st.write(f"  Promedio de frecuencias fundamentales: {promedio_frecuencia:.2f} Hz")
+                                st.write(f"  Promedio de periodos fundamentales: {promedio_periodo:.2f} segundos")
 
+                        # Comparar con la frecuencia del acelerómetro solo si hay resultados válidos
+                        frecuencia_acelerometro = 1.4  # Hz
+                        st.write(f"Frecuencia fundamental del acelerómetro: {frecuencia_acelerometro} Hz")
 
-                        frecuencias_fundamentales.append(frecuencias_fundamentales_section)
-                        periodos_fundamentales.append(periodos_fundamentales_section)
-
-                    # Calculate and display average fundamental frequency and period
-                    st.subheader("Resumen de resultados")
-                    for i in range(min(3, len(frecuencias_fundamentales[0]))):
-                        promedio_frecuencia = np.mean([f[i] for f in frecuencias_fundamentales if len(f) > i])
-                        promedio_periodo = np.mean([p[i] for p in periodos_fundamentales if len(p) > i])
-                        st.write(f"Pico {i+1}:")
-                        st.write(f"  Promedio de frecuencias fundamentales: {promedio_frecuencia:.2f} Hz")
-                        st.write(f"  Promedio de periodos fundamentales: {promedio_periodo:.2f} segundos")
-
-                    # Compare with accelerometer's fundamental frequency
-                    frecuencia_acelerometro = 1.4  # Hz
-                    st.write(f"Frecuencia fundamental del acelerómetro: {frecuencia_acelerometro} Hz")
-
-                    if all(np.mean([f[0] for f in frecuencias_fundamentales]) < frecuencia_acelerometro for f in frecuencias_fundamentales):
-                        st.success("La frecuencia fundamental promedio del suelo (primer pico) es menor que la del acelerómetro, lo que indica que las mediciones son confiables.")
+                        # Verificar si hay frecuencias válidas antes de hacer la comparación
+                        if any(len(f) > 0 for f in frecuencias_fundamentales):
+                            promedios_primeros_picos = [f[0] for f in frecuencias_fundamentales if len(f) > 0]
+                            if all(freq < frecuencia_acelerometro for freq in promedios_primeros_picos):
+                                st.success("La frecuencia fundamental promedio del suelo (primer pico) es menor que la del acelerómetro, lo que indica que las mediciones son confiables.")
+                            else:
+                                st.warning("La frecuencia fundamental promedio del suelo (primer pico) es mayor o igual que la del acelerómetro. Esto podría afectar la confiabilidad de las mediciones en frecuencias más altas.")
                     else:
-                        st.warning("La frecuencia fundamental promedio del suelo (primer pico) es mayor o igual que la del acelerómetro. Esto podría afectar la confiabilidad de las mediciones en frecuencias más altas.")
+                        st.warning("No se pudieron identificar frecuencias fundamentales en ninguna de las secciones analizadas.")
 
                     st.info("Nota: Se recomienda revisar los criterios SESAME para cada sección y pico para evaluar la confiabilidad de los resultados.")
 
@@ -620,6 +657,8 @@ def main():
     st.sidebar.markdown("""
     1. Inicie sesión o cree una cuenta.
     2. Suba un archivo CSV o TXT para analizar.
+    3. Seleccione un archivo de sus<cut_off_point>
+un archivo CSV o TXT para analizar.
     3. Seleccione un archivo de sus archivos subidos.
     4. Elija el canal a analizar (seleccione 'Todos los canales' para el análisis H/V).
     5. Ajuste los parámetros de filtrado en la barra lateral.
@@ -631,4 +670,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
