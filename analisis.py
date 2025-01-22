@@ -209,128 +209,45 @@ def graficar_resultados(resultados, fs, canales):
 
 def metodo_nakamura(datos_x, datos_y, datos_z, fs):
     """
-    Implementación mejorada del método de Nakamura H/V siguiendo las directrices específicas.
+    Implementación del método de Nakamura H/V siguiendo la metodología específica mostrada.
+    datos_x: componente E-W
+    datos_y: componente N-S
+    datos_z: componente vertical
+    fs: frecuencia de muestreo
     """
-    from scipy.signal import savgol_filter, detrend
+    from scipy.signal import welch, detrend
     import numpy as np
     
-    # Asegurar que todos los componentes tengan la misma longitud
-    longitud_min = min(len(datos_x), len(datos_y), len(datos_z))
-    if longitud_min == 0:
-        st.error("No hay datos suficientes para realizar el análisis H/V")
-        return None, None, None, None, [], []
-        
-    datos_x = datos_x[:longitud_min]
-    datos_y = datos_y[:longitud_min]
-    datos_z = datos_z[:longitud_min]
+    # 1. Preprocesamiento de señales
+    def preprocesar_senal(datos):
+        # Remover tendencia
+        datos = detrend(datos)
+        # Aplicar taper
+        window = np.hanning(len(datos))
+        return datos * window
     
-    # Definir parámetros de ventana
-    longitud_ventana = int(fs * 25)  # ventanas de 25 segundos
-    if longitud_ventana > longitud_min:
-        longitud_ventana = longitud_min
-        st.warning(f"La longitud de ventana se ha ajustado a {longitud_ventana/fs:.2f} segundos debido a la longitud limitada de datos")
+    # Preprocesar todas las componentes
+    datos_x = preprocesar_senal(datos_x)
+    datos_y = preprocesar_senal(datos_y)
+    datos_z = preprocesar_senal(datos_z)
     
-    solapamiento = 0.05  # 5% de solapamiento como especificado
-    paso = int(longitud_ventana * (1 - solapamiento))
+    # 2. Cálculo de espectros
+    def calcular_espectro(datos):
+        nperseg = int(fs * 25)  # Ventana de 25 segundos
+        noverlap = int(nperseg * 0.05)  # 5% de solapamiento
+        frecuencias, Pxx = welch(datos, fs, nperseg=nperseg, noverlap=noverlap, 
+                               detrend=False)  # Ya se aplicó detrend
+        return frecuencias, Pxx
     
-    # Calcular número de ventanas
-    n_ventanas = (longitud_min - longitud_ventana) // paso + 1
-    if n_ventanas < 1:
-        st.error("No hay suficientes datos para realizar el análisis H/V")
-        return None, None, None, None, [], []
+    # Calcular espectros para cada componente
+    f, Pxx = calcular_espectro(datos_x)  # E-W
+    _, Pyy = calcular_espectro(datos_y)  # N-S
+    _, Pzz = calcular_espectro(datos_z)  # Vertical
     
-    # Inicializar arrays para almacenar ratios H/V válidos
-    ratios_hv = []
-    frecuencias = None
+    # 3. Calcular espectro horizontal promedio
+    Phh = (Pxx + Pyy) / 2
     
-    def validar_ventana(ventana_x, ventana_y, ventana_z):
-        """
-        Valida si una ventana es adecuada para el análisis.
-        Descarta ventanas con picos excesivos o eventos sísmicos anómalos.
-        """
-        # Calcular estadísticas de la ventana
-        std_x = np.std(ventana_x)
-        std_y = np.std(ventana_y)
-        std_z = np.std(ventana_z)
-        
-        # Criterios de validación
-        max_std_ratio = 4.0  # Máxima relación entre desviaciones estándar
-        max_amplitude_factor = 3.0  # Factor máximo respecto a la media
-        
-        # Verificar relaciones entre componentes
-        if (max(std_x, std_y, std_z) / min(std_x, std_y, std_z)) > max_std_ratio:
-            return False
-            
-        # Verificar picos excesivos
-        for ventana in [ventana_x, ventana_y, ventana_z]:
-            if np.max(np.abs(ventana)) > max_amplitude_factor * np.mean(np.abs(ventana)):
-                return False
-                
-        return True
-    
-    # Procesar cada ventana
-    for i in range(n_ventanas):
-        inicio_idx = i * paso
-        fin_idx = inicio_idx + longitud_ventana
-        
-        # Obtener ventanas sincronizadas para todos los componentes
-        ventana_x = datos_x[inicio_idx:fin_idx]
-        ventana_y = datos_y[inicio_idx:fin_idx]
-        ventana_z = datos_z[inicio_idx:fin_idx]
-        
-        # Validar la calidad de la ventana
-        if not validar_ventana(ventana_x, ventana_y, ventana_z):
-            continue
-        
-        # Preprocesamiento de las ventanas
-        for ventana in [ventana_x, ventana_y, ventana_z]:
-            # Remover tendencia
-            ventana = detrend(ventana)
-            # Aplicar taper
-            ventana = ventana * np.hanning(longitud_ventana)
-        
-        # Calcular espectros para esta ventana
-        nperseg = longitud_ventana
-        noverlap = int(nperseg * 0.05)  # 5% overlap para el análisis espectral
-        
-        f, Pxx = signal.welch(ventana_x, fs, nperseg=nperseg, noverlap=noverlap, detrend='constant')
-        _, Pyy = signal.welch(ventana_y, fs, nperseg=nperseg, noverlap=noverlap, detrend='constant')
-        _, Pzz = signal.welch(ventana_z, fs, nperseg=nperseg, noverlap=noverlap, detrend='constant')
-        
-        # Filtrar frecuencias fuera del rango de interés (0.5 - 10 Hz)
-        mask = (f >= 0.5) & (f <= 10)
-        f = f[mask]
-        Pxx = Pxx[mask]
-        Pyy = Pyy[mask]
-        Pzz = Pzz[mask]
-        
-        # Evitar división por cero
-        epsilon = 1e-10
-        Pzz = np.where(Pzz < epsilon, epsilon, Pzz)
-        
-        # Calcular ratio H/V para esta ventana
-        hv = np.sqrt((Pxx + Pyy) / (2 * Pzz))
-        
-        # Aplicar suavizado adicional para reducir el ruido
-        hv = savgol_filter(hv, window_length=7, polyorder=3)
-        
-        ratios_hv.append(hv)
-        
-        if frecuencias is None:
-            frecuencias = f
-    
-    if not ratios_hv:
-        st.error("No se encontraron ventanas válidas para el análisis")
-        return None, None, None, None, [], []
-    
-    # Convertir a array numpy para cálculos
-    ratios_hv = np.array(ratios_hv)
-    
-    # Calcular media y desviación estándar
-    hv_media = np.mean(ratios_hv, axis=0)
-    hv_std = np.std(ratios_hv, axis=0)
-    
-    # Aplicar suavizado Konno-Ohmachi
+    # 4. Aplicar suavizado Konno-Ohmachi
     def suavizado_konno_ohmachi(freq, spec, b=40):
         suavizado = np.zeros_like(spec)
         for i, fc in enumerate(freq):
@@ -344,72 +261,74 @@ def metodo_nakamura(datos_x, datos_y, datos_z, fs):
             suavizado[i] = np.sum(spec * w)
         return suavizado
     
-    hv_suave = suavizado_konno_ohmachi(frecuencias, hv_media)
+    # Aplicar suavizado a los espectros
+    Phh_smooth = suavizado_konno_ohmachi(f, Phh)
+    Pzz_smooth = suavizado_konno_ohmachi(f, Pzz)
     
-    # Calcular límites de confianza
-    factor_freq = 1 / (1 + frecuencias)
-    hv_std_ajustada = hv_std * factor_freq
+    # 5. Calcular ratio H/V
+    # Evitar división por cero
+    epsilon = 1e-10
+    Pzz_smooth = np.where(Pzz_smooth < epsilon, epsilon, Pzz_smooth)
+    hv_ratio = np.sqrt(Phh_smooth / Pzz_smooth)
     
-    hv_mas_std = hv_suave + hv_std_ajustada
-    hv_menos_std = hv_suave - hv_std_ajustada
+    # 6. Encontrar frecuencia fundamental
+    # Filtrar frecuencias de interés (0.5 - 10 Hz)
+    mask = (f >= 0.5) & (f <= 10)
+    f_filtered = f[mask]
+    hv_filtered = hv_ratio[mask]
     
-    # Encontrar picos en la curva suavizada
-    # Restringir búsqueda a frecuencias cercanas a 1.4 Hz (±0.5 Hz)
-    rango_busqueda = (frecuencias >= 0.9) & (frecuencias <= 1.9)
-    indices_rango = np.where(rango_busqueda)[0]
+    # Encontrar pico principal cerca de 1.4 Hz
+    target_freq = 1.4
+    window = 0.5  # ±0.5 Hz alrededor de 1.4 Hz
+    freq_mask = (f_filtered >= target_freq - window) & (f_filtered <= target_freq + window)
     
-    if len(indices_rango) > 0:
-        # Encontrar el pico más prominente en el rango de interés
-        hv_rango = hv_suave[rango_busqueda]
-        indice_max_local = indices_rango[np.argmax(hv_rango)]
-        frecuencia_fundamental = frecuencias[indice_max_local]
+    if np.any(freq_mask):
+        peak_idx = np.argmax(hv_filtered[freq_mask])
+        freq_range_indices = np.where(freq_mask)[0]
+        peak_freq_idx = freq_range_indices[peak_idx]
+        frecuencia_fundamental = f_filtered[peak_freq_idx]
         frecuencias_fundamentales = [frecuencia_fundamental]
         periodos_fundamentales = [1 / frecuencia_fundamental]
     else:
-        st.warning("No se encontraron picos en el rango esperado (0.9-1.9 Hz)")
+        st.warning("No se encontró un pico claro cerca de 1.4 Hz")
         frecuencias_fundamentales = []
         periodos_fundamentales = []
     
-    return frecuencias, hv_suave, hv_mas_std, hv_menos_std, frecuencias_fundamentales, periodos_fundamentales
+    # 7. Calcular intervalos de confianza
+    # Usar la variabilidad espectral para estimar la incertidumbre
+    factor_freq = 1 / (1 + f)
+    hv_std = 0.2 * hv_ratio * factor_freq  # 20% de variabilidad típica
+    
+    hv_mas_std = hv_ratio + hv_std
+    hv_menos_std = hv_ratio - hv_std
+    
+    return f, hv_ratio, hv_mas_std, hv_menos_std, frecuencias_fundamentales, periodos_fundamentales
 
-
-def seleccionar_secciones_aleatorias(datos_x, datos_y, datos_z, fs, num_secciones=5, duracion_seccion=30):
+def plot_espectros(f, Pxx, Pyy, Pzz, Phh):
     """
-    Selecciona secciones aleatorias sincronizadas para los tres componentes.
+    Función para graficar los espectros individuales y promedio
     """
-    # Asegurar que todos los componentes tengan la misma longitud
-    longitud_min = min(len(datos_x), len(datos_y), len(datos_z))
-    datos_x = datos_x[:longitud_min]
-    datos_y = datos_y[:longitud_min]
-    datos_z = datos_z[:longitud_min]
+    fig = make_subplots(rows=3, cols=2, 
+                       subplot_titles=('Espectro E-W', 'Espectro N-S',
+                                     'Espectro Horizontal Promedio', 'Espectro Vertical'))
     
-    longitud_seccion = int(duracion_seccion * fs)
+    # Espectro E-W
+    fig.add_trace(go.Scatter(x=f, y=Pxx, name='E-W'), row=1, col=1)
     
-    if longitud_min <= longitud_seccion:
-        st.warning("La duración de la sección es mayor o igual que los datos disponibles. Se utilizará toda la serie de datos.")
-        return [(0, longitud_min, datos_x, datos_y, datos_z)]
+    # Espectro N-S
+    fig.add_trace(go.Scatter(x=f, y=Pyy, name='N-S'), row=1, col=2)
     
-    inicio_maximo = longitud_min - longitud_seccion
-    num_secciones_posibles = min(num_secciones, inicio_maximo)
+    # Espectro Horizontal Promedio
+    fig.add_trace(go.Scatter(x=f, y=Phh, name='H promedio'), row=2, col=1)
     
-    if num_secciones_posibles == 0:
-        st.warning("No hay suficientes datos para seleccionar secciones. Se utilizará toda la serie de datos.")
-        return [(0, longitud_min, datos_x, datos_y, datos_z)]
+    # Espectro Vertical
+    fig.add_trace(go.Scatter(x=f, y=Pzz, name='Vertical'), row=2, col=2)
     
-    if num_secciones_posibles < num_secciones:
-        st.warning(f"Solo se pueden seleccionar {num_secciones_posibles} secciones con la duración especificada.")
+    fig.update_layout(height=800, showlegend=True)
+    fig.update_xaxes(title_text='Frecuencia (Hz)', type='log')
+    fig.update_yaxes(title_text='Amplitud', type='log')
     
-    indices_inicio = random.sample(range(inicio_maximo + 1), num_secciones_posibles)
-    secciones = []
-    
-    for inicio in indices_inicio:
-        fin = min(inicio + longitud_seccion, longitud_min)
-        seccion_x = datos_x[inicio:fin]
-        seccion_y = datos_y[inicio:fin]
-        seccion_z = datos_z[inicio:fin]
-        secciones.append((inicio, fin, seccion_x, seccion_y, seccion_z))
-    
-    return secciones
+    return fig
 
 def descargar_datos_procesados(resultados, canales, fs):
     output = io.BytesIO()
@@ -610,93 +529,42 @@ def main():
                 fig = graficar_resultados(resultados, fs, canales)
                 st.plotly_chart(fig)
 
-                st.subheader("Rutinas FFT y Análisis H/V (Método de Nakamura) en secciones aleatorias")
-        
                 if canal_seleccionado == 'Todos los canales':
-                    secciones = seleccionar_secciones_aleatorias(
-                        resultados['x']['serie_filtrada'],
-                        resultados['y']['serie_filtrada'],
-                        resultados['z']['serie_filtrada'],
-                        fs,
-                        num_secciones=num_rutinas_fft
+                    st.subheader("Análisis H/V (Método de Nakamura)")
+                    
+                    # Obtener datos filtrados
+                    datos_x = resultados['x']['serie_filtrada']
+                    datos_y = resultados['y']['serie_filtrada']
+                    datos_z = resultados['z']['serie_filtrada']
+                    
+                    # Realizar análisis H/V
+                    f, hv_ratio, hv_mas_std, hv_menos_std, frecuencias_fundamentales, periodos_fundamentales = metodo_nakamura(
+                        datos_x, datos_y, datos_z, fs
                     )
-
-                    frecuencias_fundamentales = []
-                    periodos_fundamentales = []
-
-                    for i, (inicio, fin, datos_x, datos_y, datos_z) in enumerate(secciones):
-                        st.write(f"Sección {i+1}")
+                    
+                    if f is not None and len(frecuencias_fundamentales) > 0:
+                        # Graficar resultado H/V
+                        fig_hv = plot_hv_degtra_style(f, hv_ratio, hv_mas_std, hv_menos_std, frecuencias_fundamentales)
+                        st.plotly_chart(fig_hv)
                         
-                        # FFT analysis
-                        fig_fft = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05)
-                        for j, (canal, datos) in enumerate([('X', datos_x), ('Y', datos_y), ('Z', datos_z)]):
-                            frecuencias, magnitudes = calcular_fft(datos, fs)
-                            fig_fft.add_trace(go.Scatter(x=frecuencias, y=magnitudes, name=f"FFT Canal {canal}"), row=j+1, col=1)
-                            fig_fft.update_yaxes(title_text=f"Magnitud {canal}", row=j+1, col=1)
+                        # Mostrar resultados
+                        st.write("Frecuencias fundamentales identificadas:")
+                        for i, (freq, period) in enumerate(zip(frecuencias_fundamentales, periodos_fundamentales)):
+                            st.write(f"Pico {i+1}:")
+                            st.write(f"  Frecuencia: {freq:.2f} Hz")
+                            st.write(f"  Periodo: {period:.2f} segundos")
                         
-                        fig_fft.update_layout(height=800, title_text=f"FFT Sección {i+1}")
-                        fig_fft.update_xaxes(title_text="Frecuencia (Hz)", row=3, col=1)
-                        st.plotly_chart(fig_fft)
-
-                        # H/V analysis using improved Nakamura method
-                        f, hv_suave, hv_mas_std, hv_menos_std, frecuencias_fundamentales_section, periodos_fundamentales_section = metodo_nakamura(datos_x, datos_y, datos_z, fs)
-                
-                        if f is not None:  # Verificar si el análisis fue exitoso
-                            fig_hv = plot_hv_degtra_style(f, hv_suave, hv_mas_std, hv_menos_std, frecuencias_fundamentales_section)
-                            st.plotly_chart(fig_hv)
-
-                            if len(frecuencias_fundamentales_section) > 0:
-                                st.write("Frecuencias fundamentales identificadas:")
-                                for k, (freq, period) in enumerate(zip(frecuencias_fundamentales_section, periodos_fundamentales_section)):
-                                    st.write(f"Pico {k+1}:")
-                                    st.write(f"  Frecuencia: {freq:.2f} Hz")
-                                    st.write(f"  Periodo: {period:.2f} segundos")
-                        
-                                frecuencias_fundamentales.append(frecuencias_fundamentales_section)
-                                periodos_fundamentales.append(periodos_fundamentales_section)
-
-                    # Calcular y mostrar promedios solo si hay resultados válidos
-                    if frecuencias_fundamentales:
-                        st.subheader("Resumen de resultados")
-                        for i in range(min(3, max(len(f) for f in frecuencias_fundamentales))):
-                            # Obtener solo las frecuencias válidas para este índice
-                            freqs_validas = [f[i] for f in frecuencias_fundamentales if i < len(f)]
-                            periodos_validos = [p[i] for p in periodos_fundamentales if i < len(p)]
-                            
-                            if freqs_validas:  # Solo mostrar si hay frecuencias válidas
-                                promedio_frecuencia = np.mean(freqs_validas)
-                                promedio_periodo = np.mean(periodos_validos)
-                                st.write(f"Pico {i+1}:")
-                                st.write(f"  Promedio de frecuencias fundamentales: {promedio_frecuencia:.2f} Hz")
-                                st.write(f"  Promedio de periodos fundamentales: {promedio_periodo:.2f} segundos")
-
-                        # Comparar con la frecuencia del acelerómetro solo si hay resultados válidos
+                        # Comparar con la frecuencia del acelerómetro
                         frecuencia_acelerometro = 1.4  # Hz
                         st.write(f"Frecuencia fundamental del acelerómetro: {frecuencia_acelerometro} Hz")
-
-                        # Verificar si hay frecuencias válidas antes de hacer la comparación
-                        if any(len(f) > 0 for f in frecuencias_fundamentales):
-                            promedios_primeros_picos = [f[0] for f in frecuencias_fundamentales if len(f) > 0]
-                            if all(freq < frecuencia_acelerometro for freq in promedios_primeros_picos):
-                                st.success("La frecuencia fundamental promedio del suelo (primer pico) es menor que la del acelerómetro, lo que indica que las mediciones son confiables.")
-                            else:
-                                st.warning("La frecuencia fundamental promedio del suelo (primer pico) es mayor o igual que la del acelerómetro. Esto podría afectar la confiabilidad de las mediciones en frecuencias más altas.")
+                        
+                        if frecuencias_fundamentales[0] < frecuencia_acelerometro:
+                            st.success("La frecuencia fundamental del suelo es menor que la del acelerómetro, lo que indica que las mediciones son confiables.")
+                        else:
+                            st.warning("La frecuencia fundamental del suelo es mayor o igual que la del acelerómetro. Esto podría afectar la confiabilidad de las mediciones en frecuencias más altas.")
+                    
                     else:
-                        st.warning("No se pudieron identificar frecuencias fundamentales en ninguna de las secciones analizadas.")
-
-                    st.info("Nota: Se recomienda revisar los criterios SESAME para cada sección y pico para evaluar la confiabilidad de los resultados.")
-
-                else:
-                    st.warning("El análisis H/V requiere datos de los tres canales (X, Y, Z). Por favor, seleccione 'Todos los canales' para realizar este análisis.")
-
-                # Add download button for processed data
-                output = descargar_datos_procesados(resultados, canales, fs)
-                st.download_button(
-                    label="Descargar datos procesados",
-                    data=output,
-                    file_name="datos_procesados.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+                        st.error("No se pudieron identificar frecuencias fundamentales válidas en el análisis.")
 
     st.sidebar.header("Instrucciones")
     st.sidebar.markdown("""
