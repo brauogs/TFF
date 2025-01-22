@@ -314,8 +314,8 @@ def plot_nakamura_workflow(datos_x, datos_y, datos_z, f, Pxx, Pyy, Pzz, Phh, hv_
     fig = make_subplots(
         rows=4, cols=2,
         subplot_titles=(
-            'Microtrepidaciones E-W', 'Microtrepidaciones N-S',
-            'Espectro E-W', 'Espectro N-S',
+            'Canal X', 'Canal Y',
+            'Canal X', 'Canal Y',
             'Espectro Horizontal Promedio', 'Espectro Vertical',
             'Relación espectral H/V', ''
         ),
@@ -325,12 +325,12 @@ def plot_nakamura_workflow(datos_x, datos_y, datos_z, f, Pxx, Pyy, Pzz, Phh, hv_
     
     # 1. Series de tiempo
     tiempo = np.arange(len(datos_x)) / fs
-    fig.add_trace(go.Scatter(x=tiempo, y=datos_x, name='E-W', line=dict(color='green')), row=1, col=1)
-    fig.add_trace(go.Scatter(x=tiempo, y=datos_y, name='N-S', line=dict(color='blue')), row=1, col=2)
+    fig.add_trace(go.Scatter(x=tiempo, y=datos_x, name='Canal X', line=dict(color='green')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=tiempo, y=datos_y, name='Canal Y', line=dict(color='blue')), row=1, col=2)
     
     # 2. Espectros individuales
-    fig.add_trace(go.Scatter(x=f, y=Pxx, name='Espectro E-W', line=dict(color='blue')), row=2, col=1)
-    fig.add_trace(go.Scatter(x=f, y=Pyy, name='Espectro N-S', line=dict(color='blue')), row=2, col=2)
+    fig.add_trace(go.Scatter(x=f, y=Pxx, name='Espectro Canal X', line=dict(color='blue')), row=2, col=1)
+    fig.add_trace(go.Scatter(x=f, y=Pyy, name='Espectro Canal Y', line=dict(color='blue')), row=2, col=2)
     
     # 3. Espectro horizontal promedio y vertical
     fig.add_trace(go.Scatter(x=f, y=Phh, name='H promedio', line=dict(color='blue')), row=3, col=1)
@@ -368,14 +368,14 @@ def plot_espectros(f, Pxx, Pyy, Pzz, Phh):
     Función para graficar los espectros individuales y promedio
     """
     fig = make_subplots(rows=3, cols=2, 
-                       subplot_titles=('Espectro E-W', 'Espectro N-S',
+                       subplot_titles=('Espectro X', 'Espectro Y',
                                      'Espectro Horizontal Promedio', 'Espectro Vertical'))
     
     # Espectro E-W
-    fig.add_trace(go.Scatter(x=f, y=Pxx, name='E-W'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=f, y=Pxx, name='X'), row=1, col=1)
     
     # Espectro N-S
-    fig.add_trace(go.Scatter(x=f, y=Pyy, name='N-S'), row=1, col=2)
+    fig.add_trace(go.Scatter(x=f, y=Pyy, name='Y'), row=1, col=2)
     
     # Espectro Horizontal Promedio
     fig.add_trace(go.Scatter(x=f, y=Phh, name='H promedio'), row=2, col=1)
