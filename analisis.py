@@ -418,7 +418,9 @@ def plot_hv_degtra_style(f, hv_smooth, hv_plus_std, hv_minus_std, fundamental_fr
                 gridcolor='rgba(211, 211, 211, 0.5)'
             ),
             title='f, Hz',
-            range=[-1, 2]  # 10^-1 to 10^2
+            ticktext=['10⁻¹', '10⁰', '10¹'],
+            tickvals=[0.1, 1, 10],
+            range=[-1, 1],  # 10^-1 to 10^1
         ),
         yaxis=dict(
             type='log',
@@ -431,7 +433,9 @@ def plot_hv_degtra_style(f, hv_smooth, hv_plus_std, hv_minus_std, fundamental_fr
                 gridcolor='rgba(211, 211, 211, 0.5)'
             ),
             title='H/V',
-            range=[-1, 1]  # 10^-1 to 10^1
+            ticktext=['10⁻¹', '10⁰', '10¹'],
+            tickvals=[0.1, 1, 10],
+            range=[-1, 1],  # 10^-1 to 10^1
         )
     )
     
@@ -657,8 +661,6 @@ def main():
     st.sidebar.markdown("""
     1. Inicie sesión o cree una cuenta.
     2. Suba un archivo CSV o TXT para analizar.
-    3. Seleccione un archivo de sus<cut_off_point>
-un archivo CSV o TXT para analizar.
     3. Seleccione un archivo de sus archivos subidos.
     4. Elija el canal a analizar (seleccione 'Todos los canales' para el análisis H/V).
     5. Ajuste los parámetros de filtrado en la barra lateral.
@@ -670,5 +672,4 @@ un archivo CSV o TXT para analizar.
 
 if __name__ == "__main__":
     main()
-
 
