@@ -307,26 +307,43 @@ def metodo_nakamura(datos_x, datos_y, datos_z, fs):
     
     return frecuencias, hv_suave, hv_mas_std, hv_menos_std, frecuencias_fundamentales, periodos_fundamentales
 
-def seleccionar_secciones_aleatorias(datos, fs, num_secciones=5, duracion_seccion=30):
+def seleccionar_secciones_aleatorias(datos_x, datos_y, datos_z, fs, num_secciones=5, duracion_seccion=30):
+    """
+    Selecciona secciones aleatorias sincronizadas para los tres componentes.
+    """
+    # Asegurar que todos los componentes tengan la misma longitud
+    longitud_min = min(len(datos_x), len(datos_y), len(datos_z))
+    datos_x = datos_x[:longitud_min]
+    datos_y = datos_y[:longitud_min]
+    datos_z = datos_z[:longitud_min]
+    
     longitud_seccion = int(duracion_seccion * fs)
-    longitud_datos = len(datos)
     
-    if longitud_datos <= longitud_seccion:
+    if longitud_min <= longitud_seccion:
         st.warning("La duración de la sección es mayor o igual que los datos disponibles. Se utilizará toda la serie de datos.")
-        return [(0, longitud_datos, datos)]
+        return [(0, longitud_min, datos_x, datos_y, datos_z)]
     
-    inicio_maximo = longitud_datos - longitud_seccion
+    inicio_maximo = longitud_min - longitud_seccion
     num_secciones_posibles = min(num_secciones, inicio_maximo)
     
     if num_secciones_posibles == 0:
         st.warning("No hay suficientes datos para seleccionar secciones. Se utilizará toda la serie de datos.")
-        return [(0, longitud_datos, datos)]
+        return [(0, longitud_min, datos_x, datos_y, datos_z)]
     
     if num_secciones_posibles < num_secciones:
         st.warning(f"Solo se pueden seleccionar {num_secciones_posibles} secciones con la duración especificada.")
     
     indices_inicio = random.sample(range(inicio_maximo + 1), num_secciones_posibles)
-    return [(inicio, min(inicio + longitud_seccion, longitud_datos), datos[inicio:min(inicio + longitud_seccion, longitud_datos)]) for inicio in indices_inicio]
+    secciones = []
+    
+    for inicio in indices_inicio:
+        fin = min(inicio + longitud_seccion, longitud_min)
+        seccion_x = datos_x[inicio:fin]
+        seccion_y = datos_y[inicio:fin]
+        seccion_z = datos_z[inicio:fin]
+        secciones.append((inicio, fin, seccion_x, seccion_y, seccion_z))
+    
+    return secciones
 
 def descargar_datos_procesados(resultados, canales, fs):
     output = io.BytesIO()
@@ -526,14 +543,18 @@ def main():
                 st.subheader("Rutinas FFT y Análisis H/V (Método de Nakamura) en secciones aleatorias")
         
                 if canal_seleccionado == 'Todos los canales':
-                    secciones_x = seleccionar_secciones_aleatorias(resultados['x']['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
-                    secciones_y = seleccionar_secciones_aleatorias(resultados['y']['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
-                    secciones_z = seleccionar_secciones_aleatorias(resultados['z']['serie_filtrada'], fs, num_secciones=num_rutinas_fft)
+                    secciones = seleccionar_secciones_aleatorias(
+                        resultados['x']['serie_filtrada'],
+                        resultados['y']['serie_filtrada'],
+                        resultados['z']['serie_filtrada'],
+                        fs,
+                        num_secciones=num_rutinas_fft
+                    )
 
                     frecuencias_fundamentales = []
                     periodos_fundamentales = []
 
-                    for i, ((inicio_x, fin_x, datos_x), (_, _, datos_y), (_, _, datos_z)) in enumerate(zip(secciones_x, secciones_y, secciones_z)):
+                    for i, (inicio, fin, datos_x, datos_y, datos_z) in enumerate(secciones):
                         st.write(f"Sección {i+1}")
                         
                         # FFT analysis
