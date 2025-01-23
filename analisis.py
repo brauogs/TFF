@@ -349,100 +349,89 @@ def main():
             fs = st.sidebar.number_input("Frecuencia de muestreo (Hz)", min_value=1, value=100)
             num_ventanas = st.sidebar.number_input("Número de ventanas para análisis H/V", min_value=1, max_value=100, value=20)
             tamano_ventana = st.sidebar.number_input("Tamaño de ventana (puntos)", min_value=100, max_value=10000, value=2000)
-            dividir_por_g = st.sidebar.checkbox("Dividir por g (9.81 m/s²)", value=False)
 
             if st.button("Analizar datos"):
-                if uploaded_file is not None:
-                    try:
-                        # Obtener y procesar datos
-                        datos_x = df['x'].values
-                        datos_y = df['y'].values
-                        datos_z = df['z'].values
-                        if dividir_por_g:
-                            datos_x = datos_x / 9.81
-                            datos_y = datos_y / 9.81
-                            datos_z = datos_z / 9.81
-                    
-                        # Corrección de línea base y filtrado
-                        x_proc = aplicar_filtro_pasabanda(corregir_linea_base(datos_x), fs)
-                        y_proc = aplicar_filtro_pasabanda(corregir_linea_base(datos_y), fs)
-                        z_proc = aplicar_filtro_pasabanda(corregir_linea_base(datos_z), fs)
-                        
-                        # Mostrar canales filtrados
-                        st.subheader("Canales filtrados (0.05-10 Hz)")
-                        fig_canales = graficar_canales_individuales(x_proc, y_proc, z_proc, fs)
-                        st.plotly_chart(fig_canales)
-                        
-                        # Realizar análisis H/V
-                        resultados_hv = analisis_hv(
-                            x_proc, y_proc, z_proc,
-                            fs=fs,
-                            num_ventanas=num_ventanas,
-                            tamano_ventana=tamano_ventana
-                        )
-                        
-                        # Mostrar ejemplo de ventana seleccionada
-                        st.subheader("Ejemplo de ventana seleccionada")
-                        nini = random.randint(0, len(x_proc) - tamano_ventana)
-                        x1 = x_proc[nini:nini+tamano_ventana]
-                        y1 = y_proc[nini:nini+tamano_ventana]
-                        z1 = z_proc[nini:nini+tamano_ventana]
-                        
-                        fig_ventana = graficar_ventana(x1, y1, z1, fs, nini)
-                        st.plotly_chart(fig_ventana)
-                        
-                        # Mostrar gráfico H/V
-                        st.subheader("Análisis H/V")
-                        fig_hv = graficar_hv(resultados_hv)
-                        st.plotly_chart(fig_hv)
-                        
-                        # Mostrar estadísticas
-                        st.subheader("Estadísticas del análisis H/V")
-                        if resultados_hv['frecuencia_fundamental']:
-                            st.write(f"Frecuencia fundamental: {resultados_hv['frecuencia_fundamental']:.2f} Hz")
-                            st.write(f"Periodo fundamental: {resultados_hv['periodo_fundamental']:.2f} s")
-                        else:
-                            st.write("No se pudo determinar una frecuencia fundamental válida en el rango de 0.05 a 10 Hz.")
+                # Obtener y procesar datos
+                datos_x = df['x'].values
+                datos_y = df['y'].values
+                datos_z = df['z'].values
                 
-                        st.write("Estadísticas globales de los cocientes de amplitud:")
-                        st.write(f"Promedio x/z: {resultados_hv['estadisticas_globales']['promedio_xz']:.4f}")
-                        st.write(f"Desviación estándar x/z: {resultados_hv['estadisticas_globales']['std_xz']:.4f}")
-                        st.write(f"Promedio y/z: {resultados_hv['estadisticas_globales']['promedio_yz']:.4f}")
-                        st.write(f"Desviación estándar y/z: {resultados_hv['estadisticas_globales']['std_yz']:.4f}")
+                # Corrección de línea base y filtrado
+                x_proc = aplicar_filtro_pasabanda(corregir_linea_base(datos_x), fs)
+                y_proc = aplicar_filtro_pasabanda(corregir_linea_base(datos_y), fs)
+                z_proc = aplicar_filtro_pasabanda(corregir_linea_base(datos_z), fs)
                 
-                        st.write("\nEstadísticas detalladas:")
-                        st.write(f"Promedio x/z: {np.mean(resultados_hv['media_xz']):.4f}")
-                        st.write(f"Promedio y/z: {np.mean(resultados_hv['media_yz']):.4f}")
-                        st.write(f"Promedio + Desviación estándar x/z: {np.mean(resultados_hv['media_xz'] + resultados_hv['std_xz']):.4f}")
-                        st.write(f"Promedio - Desviación estándar x/z: {np.mean(resultados_hv['media_xz'] - resultados_hv['std_xz']):.4f}")
-                        st.write(f"Promedio + Desviación estándar y/z: {np.mean(resultados_hv['media_yz'] + resultados_hv['std_yz']):.4f}")
-                        st.write(f"Promedio - Desviación estándar y/z: {np.mean(resultados_hv['media_yz'] - resultados_hv['std_yz']):.4f}")
+                # Mostrar canales filtrados
+                st.subheader("Canales filtrados (0.05-10 Hz)")
+                fig_canales = graficar_canales_individuales(x_proc, y_proc, z_proc, fs)
+                st.plotly_chart(fig_canales)
                 
-                        # Mostrar cocientes adicionales
-                        st.subheader("Cocientes adicionales")
-                        for i in range(1, len(resultados_hv['cocientes_xz'])):
-                            st.write(f"Cociente {i+1} x/z: {np.mean(resultados_hv['cocientes_xz'][i]):.4f}")
-                            st.write(f"Cociente {i+1} y/z: {np.mean(resultados_hv['cocientes_yz'][i]):.4f}")
-                            
-                    except Exception as e:
-                        st.error(f"Se produjo un error: {e}")
-                    
-                    st.sidebar.header("Instrucciones")
-                    st.sidebar.markdown("""
-                    1. Inicie sesión o cree una cuenta.
-                    2. Suba un archivo CSV o TXT para analizar.
-                    3. Seleccione un archivo de sus archivos subidos.
-                    4. Ajuste los parámetros de análisis en la barra lateral:
-                       - Frecuencia de muestreo
-                       - Número de ventanas para análisis H/V
-                       - Tamaño de ventana
-                    5. Haga clic en 'Analizar datos' para ver:
-                       - Canales filtrados individualmente
-                       - Ventana seleccionada aleatoriamente
-                       - Análisis H/V
-                       - Estadísticas completas
-                    """)
+                # Realizar análisis H/V
+                resultados_hv = analisis_hv(
+                    x_proc, y_proc, z_proc,
+                    fs=fs,
+                    num_ventanas=num_ventanas,
+                    tamano_ventana=tamano_ventana
+                )
+                
+                # Mostrar ejemplo de ventana seleccionada
+                st.subheader("Ejemplo de ventana seleccionada")
+                nini = random.randint(0, len(x_proc) - tamano_ventana)
+                x1 = x_proc[nini:nini+tamano_ventana]
+                y1 = y_proc[nini:nini+tamano_ventana]
+                z1 = z_proc[nini:nini+tamano_ventana]
+                
+                fig_ventana = graficar_ventana(x1, y1, z1, fs, nini)
+                st.plotly_chart(fig_ventana)
+                
+                # Mostrar gráfico H/V
+                st.subheader("Análisis H/V")
+                fig_hv = graficar_hv(resultados_hv)
+                st.plotly_chart(fig_hv)
+                
+                # Mostrar estadísticas
+                st.subheader("Estadísticas del análisis H/V")
+                if resultados_hv['frecuencia_fundamental']:
+                    st.write(f"Frecuencia fundamental: {resultados_hv['frecuencia_fundamental']:.2f} Hz")
+                    st.write(f"Periodo fundamental: {resultados_hv['periodo_fundamental']:.2f} s")
+                else:
+                    st.write("No se pudo determinar una frecuencia fundamental válida en el rango de 0.05 a 10 Hz.")
 
+                st.write("Estadísticas globales de los cocientes de amplitud:")
+                st.write(f"Promedio x/z: {resultados_hv['estadisticas_globales']['promedio_xz']:.4f}")
+                st.write(f"Desviación estándar x/z: {resultados_hv['estadisticas_globales']['std_xz']:.4f}")
+                st.write(f"Promedio y/z: {resultados_hv['estadisticas_globales']['promedio_yz']:.4f}")
+                st.write(f"Desviación estándar y/z: {resultados_hv['estadisticas_globales']['std_yz']:.4f}")
+
+                st.write("\nEstadísticas detalladas:")
+                st.write(f"Promedio x/z: {np.mean(resultados_hv['media_xz']):.4f}")
+                st.write(f"Promedio y/z: {np.mean(resultados_hv['media_yz']):.4f}")
+                st.write(f"Promedio + Desviación estándar x/z: {np.mean(resultados_hv['media_xz'] + resultados_hv['std_xz']):.4f}")
+                st.write(f"Promedio - Desviación estándar x/z: {np.mean(resultados_hv['media_xz'] - resultados_hv['std_xz']):.4f}")
+                st.write(f"Promedio + Desviación estándar y/z: {np.mean(resultados_hv['media_yz'] + resultados_hv['std_yz']):.4f}")
+                st.write(f"Promedio - Desviación estándar y/z: {np.mean(resultados_hv['media_yz'] - resultados_hv['std_yz']):.4f}")
+
+                # Mostrar cocientes adicionales
+                st.subheader("Cocientes adicionales")
+                for i in range(1, len(resultados_hv['cocientes_xz'])):
+                    st.write(f"Cociente {i+1} x/z: {np.mean(resultados_hv['cocientes_xz'][i]):.4f}")
+                    st.write(f"Cociente {i+1} y/z: {np.mean(resultados_hv['cocientes_yz'][i]):.4f}")
+
+    st.sidebar.header("Instrucciones")
+    st.sidebar.markdown("""
+    1. Inicie sesión o cree una cuenta.
+    2. Suba un archivo CSV o TXT para analizar.
+    3. Seleccione un archivo de sus archivos subidos.
+    4. Ajuste los parámetros de análisis en la barra lateral:
+       - Frecuencia de muestreo
+       - Número de ventanas para análisis H/V
+       - Tamaño de ventana
+    5. Haga clic en 'Analizar datos' para ver:
+       - Canales filtrados individualmente
+       - Ventana seleccionada aleatoriamente
+       - Análisis H/V
+       - Estadísticas completas
+    """)
 
 if __name__ == "__main__":
     main()
