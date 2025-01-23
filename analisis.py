@@ -14,7 +14,7 @@ import random
 
 st.set_page_config(page_title="Análisis del Acelerograma", layout="wide")
 
-# Firebase setup functions
+# Inicio de sesión, todo lo relacionado a firebase.
 def get_firebase_credentials():
     try:
         return dict(st.secrets["firebase"])
