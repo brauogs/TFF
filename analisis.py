@@ -124,6 +124,7 @@ def calcular_espectro_fourier(datos):
 def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000):
     cocientes_xz = []
     cocientes_yz = []
+    frecuencias_fundamentales = []
     
     for _ in range(num_ventanas):
         nini = random.randint(0, len(x) - tamano_ventana)
@@ -135,13 +136,20 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000):
         fft_y1 = calcular_espectro_fourier(y1)
         fft_z1 = calcular_espectro_fourier(z1)
         
-        cociente_xz = np.mean(fft_x1 / fft_z1)
-        cociente_yz = np.mean(fft_y1 / fft_z1)
+        cociente_xz = fft_x1 / fft_z1
+        cociente_yz = fft_y1 / fft_z1
         
-        cocientes_xz.append(cociente_xz)
-        cocientes_yz.append(cociente_yz)
+        cocientes_xz.append(np.mean(cociente_xz))
+        cocientes_yz.append(np.mean(cociente_yz))
+        
+        # Calcular la frecuencia fundamental
+        hv = np.sqrt((cociente_xz**2 + cociente_yz**2) / 2)
+        frecuencias = np.fft.fftfreq(tamano_ventana, d=1/fs)
+        indice_max = np.argmax(hv)
+        frecuencia_fundamental = frecuencias[indice_max]
+        frecuencias_fundamentales.append(frecuencia_fundamental)
     
-    return cocientes_xz, cocientes_yz
+    return cocientes_xz, cocientes_yz, frecuencias_fundamentales
 
 def graficar_resultados(resultados, fs, canales):
     fig = make_subplots(rows=len(canales), cols=2, 
@@ -165,10 +173,11 @@ def graficar_resultados(resultados, fs, canales):
         fig.update_yaxes(title_text="Magnitud", row=i, col=2)
     return fig
 
-def guardar_estadisticas(cocientes_xz, cocientes_yz):
+def guardar_estadisticas(cocientes_xz, cocientes_yz, frecuencias_fundamentales):
     datos = {
         'Cociente x/z': cocientes_xz,
-        'Cociente y/z': cocientes_yz
+        'Cociente y/z': cocientes_yz,
+        'Frecuencia fundamental': frecuencias_fundamentales
     }
     df = pd.DataFrame(datos)
     return df.to_csv(index=False).encode('utf-8')
@@ -270,16 +279,19 @@ def main():
                 st.plotly_chart(fig)
 
                 st.subheader("Análisis H/V")
-                cocientes_xz, cocientes_yz = analisis_hv(resultados['x'], resultados['y'], resultados['z'], fs, num_ventanas, tamano_ventana)
+                cocientes_xz, cocientes_yz, frecuencias_fundamentales = analisis_hv(resultados['x'], resultados['y'], resultados['z'], fs, num_ventanas, tamano_ventana)
                 
                 promedio_xz = np.mean(cocientes_xz)
                 desviacion_xz = np.std(cocientes_xz)
                 promedio_yz = np.mean(cocientes_yz)
                 desviacion_yz = np.std(cocientes_yz)
+                frecuencia_fundamental_promedio = np.mean(frecuencias_fundamentales)
 
                 st.write("Resultados del análisis H/V:")
                 st.write(f"Cociente x/z: Promedio = {promedio_xz:.4f}, Promedio + Desviación = {promedio_xz + desviacion_xz:.4f}, Promedio - Desviación = {promedio_xz - desviacion_xz:.4f}")
                 st.write(f"Cociente y/z: Promedio = {promedio_yz:.4f}, Promedio + Desviación = {promedio_yz + desviacion_yz:.4f}, Promedio - Desviación = {promedio_yz - desviacion_yz:.4f}")
+                st.write(f"Frecuencia fundamental promedio: {frecuencia_fundamental_promedio:.2f} Hz")
+                st.write(f"Periodo fundamental promedio: {1/frecuencia_fundamental_promedio:.2f} segundos")
 
                 fig_hv = go.Figure()
                 fig_hv.add_trace(go.Scatter(y=cocientes_xz, name="Cociente x/z", mode='markers'))
@@ -287,8 +299,13 @@ def main():
                 fig_hv.update_layout(title="Cocientes H/V por ventana", xaxis_title="Número de ventana", yaxis_title="Cociente H/V")
                 st.plotly_chart(fig_hv)
 
+                fig_freq = go.Figure()
+                fig_freq.add_trace(go.Scatter(y=frecuencias_fundamentales, mode='markers', name="Frecuencia fundamental"))
+                fig_freq.update_layout(title="Frecuencias fundamentales por ventana", xaxis_title="Número de ventana", yaxis_title="Frecuencia (Hz)")
+                st.plotly_chart(fig_freq)
+
                 # Generar y descargar estadísticas
-                csv = guardar_estadisticas(cocientes_xz, cocientes_yz)
+                csv = guardar_estadisticas(cocientes_xz, cocientes_yz, frecuencias_fundamentales)
                 st.download_button(
                     label="Descargar estadísticas H/V",
                     data=csv,
