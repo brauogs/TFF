@@ -424,21 +424,21 @@ def main():
                             st.write(f"Cociente {i+1} x/z: {np.mean(resultados_hv['cocientes_xz'][i]):.4f}")
                             st.write(f"Cociente {i+1} y/z: {np.mean(resultados_hv['cocientes_yz'][i]):.4f}")
 
-    st.sidebar.header("Instrucciones")
-    st.sidebar.markdown("""
-    1. Inicie sesión o cree una cuenta.
-    2. Suba un archivo CSV o TXT para analizar.
-    3. Seleccione un archivo de sus archivos subidos.
-    4. Ajuste los parámetros de análisis en la barra lateral:
-       - Frecuencia de muestreo
-       - Número de ventanas para análisis H/V
-       - Tamaño de ventana
-    5. Haga clic en 'Analizar datos' para ver:
-       - Canales filtrados individualmente
-       - Ventana seleccionada aleatoriamente
-       - Análisis H/V
-       - Estadísticas completas
-    """)
+                            st.sidebar.header("Instrucciones")
+                            st.sidebar.markdown("""
+                            1. Inicie sesión o cree una cuenta.
+                            2. Suba un archivo CSV o TXT para analizar.
+                            3. Seleccione un archivo de sus archivos subidos.
+                            4. Ajuste los parámetros de análisis en la barra lateral:
+                               - Frecuencia de muestreo
+                               - Número de ventanas para análisis H/V
+                               - Tamaño de ventana
+                            5. Haga clic en 'Analizar datos' para ver:
+                               - Canales filtrados individualmente
+                               - Ventana seleccionada aleatoriamente
+                               - Análisis H/V
+                               - Estadísticas completas
+                            """)
 
 if __name__ == "__main__":
     main()
