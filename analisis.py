@@ -305,7 +305,7 @@ def main():
             st.write("Columnas en el archivo:", columnas_existentes)
 
             # Parámetros de análisis
-            st.sidebar.header("Parámetros dest.sidebar.header("Parámetros de análisis")
+            st.sidebar.header("Parámetros de análisis")
             fs = st.sidebar.number_input("Frecuencia de muestreo (Hz)", min_value=1, value=100)
             num_ventanas = st.sidebar.number_input("Número de ventanas para análisis H/V", min_value=1, max_value=100, value=20)
             tamano_ventana = st.sidebar.number_input("Tamaño de ventana (puntos)", min_value=100, max_value=10000, value=2000)
