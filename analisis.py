@@ -349,12 +349,21 @@ def main():
             fs = st.sidebar.number_input("Frecuencia de muestreo (Hz)", min_value=1, value=100)
             num_ventanas = st.sidebar.number_input("Número de ventanas para análisis H/V", min_value=1, max_value=100, value=20)
             tamano_ventana = st.sidebar.number_input("Tamaño de ventana (puntos)", min_value=100, max_value=10000, value=2000)
+            dividir_por_g = st.sidebar.checkbox("Dividir datos por 9.81 (gravedad)", value=False)
 
+            
+            
             if st.button("Analizar datos"):
                 # Obtener y procesar datos
                 datos_x = df['x'].values
                 datos_y = df['y'].values
                 datos_z = df['z'].values
+
+                if dividir_por_g:
+                    datos_x = datos_x / 9.81
+                    datos_y = datos_z / 9.81
+                    datos_z = datos_z / 9.81
+                    
                 
                 # Corrección de línea base y filtrado
                 x_proc = aplicar_filtro_pasabanda(corregir_linea_base(datos_x), fs)
