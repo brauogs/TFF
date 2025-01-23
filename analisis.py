@@ -145,6 +145,12 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000):
     hv = np.sqrt((media_xz**2 + media_yz**2) / 2)
     hv_std = np.sqrt((std_xz**2 + std_yz**2) / 2)
     
+    # Cálculo de estadísticas globales para x1/z1 y y1/z1
+    promedio_global_xz = np.mean(cocientes_xz)
+    promedio_global_yz = np.mean(cocientes_yz)
+    std_global_xz = np.std(cocientes_xz)
+    std_global_yz = np.std(cocientes_yz)
+    
     return {
         'frecuencias': frecuencias_positivas,
         'hv': hv,
@@ -158,6 +164,12 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000):
             'x': ventanas_x,
             'y': ventanas_y,
             'z': ventanas_z
+        },
+        'estadisticas_globales': {
+            'promedio_xz': promedio_global_xz,
+            'promedio_yz': promedio_global_yz,
+            'std_xz': std_global_xz,
+            'std_yz': std_global_yz
         }
     }
 
@@ -354,6 +366,13 @@ def main():
                 
                 # Mostrar estadísticas
                 st.subheader("Estadísticas del análisis H/V")
+                st.write("Estadísticas globales de los cocientes de amplitud:")
+                st.write(f"Promedio x/z: {resultados_hv['estadisticas_globales']['promedio_xz']:.4f}")
+                st.write(f"Desviación estándar x/z: {resultados_hv['estadisticas_globales']['std_xz']:.4f}")
+                st.write(f"Promedio y/z: {resultados_hv['estadisticas_globales']['promedio_yz']:.4f}")
+                st.write(f"Desviación estándar y/z: {resultados_hv['estadisticas_globales']['std_yz']:.4f}")
+                
+                st.write("\nEstadísticas detalladas:")
                 st.write(f"Promedio x/z: {np.mean(resultados_hv['media_xz']):.4f}")
                 st.write(f"Promedio y/z: {np.mean(resultados_hv['media_yz']):.4f}")
                 st.write(f"Promedio + Desviación estándar x/z: {np.mean(resultados_hv['media_xz'] + resultados_hv['std_xz']):.4f}")
