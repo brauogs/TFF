@@ -153,6 +153,14 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5
     # Cálculo del periodo fundamental
     periodo_fundamental = 1 / frecuencia_fundamental if frecuencia_fundamental else None
     
+    # Estadísticas globales
+    estadisticas_globales = {
+        'promedio_xz': np.mean(Cociente_xz),
+        'promedio_yz': np.mean(Cociente_yz),
+        'std_xz': np.mean(Desviacion_xz),
+        'std_yz': np.mean(Desviacion_yz)
+    }
+    
     return {
         'frecuencias': frecuencias,
         'hv': hv,
@@ -167,14 +175,8 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5
         'cocientes_yz': [Cociente_yz, Cociente_yz2],
         'frecuencia_fundamental': frecuencia_fundamental,
         'periodo_fundamental': periodo_fundamental,
-        'estadisticas_globales': {
-            'promedio_xz': np.mean(Cociente_xz),
-            'promedio_yz': np.mean(Cociente_yz),
-            'std_xz': np.mean(Desviacion_xz),
-            'std_yz': np.mean(Desviacion_yz)
-        }
+        'estadisticas_globales': estadisticas_globales
     }
-
 # Funciones de visualización (sin cambios)
 def graficar_canales_individuales(x, y, z, fs):
     """Grafica cada canal de forma individual después del filtrado"""
