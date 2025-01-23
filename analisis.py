@@ -106,7 +106,7 @@ def obtener_periodo_fundamental(frecuencias, hv):
     periodo_fundamental = 1 / frecuencia_fundamental
     return periodo_fundamental, frecuencia_fundamental
 
-def procesar_datos_sismicos(df, canales, corte_bajo, corte_alto): #Removed porcentaje_taper
+def procesar_datos_sismicos(df, canales, corte_bajo, corte_alto):
     fs_predeterminada = 100
     fs = fs_predeterminada
     
@@ -153,10 +153,10 @@ def calcular_espectro_fourier(datos, fs):
     return frecuencias, amplitudes
 
 def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000):
-    cociente_xz = np.zeros(tamano_ventana // 2 + 1)
-    cociente_yz = np.zeros(tamano_ventana // 2 + 1)
-    cociente_xz2 = np.zeros(tamano_ventana // 2 + 1)
-    cociente_yz2 = np.zeros(tamano_ventana // 2 + 1)
+    cociente_xz = np.zeros(tamano_ventana // 2)
+    cociente_yz = np.zeros(tamano_ventana // 2)
+    cociente_xz2 = np.zeros(tamano_ventana // 2)
+    cociente_yz2 = np.zeros(tamano_ventana // 2)
     
     for _ in range(num_ventanas):
         nini = random.randint(0, len(x) - tamano_ventana)
@@ -201,7 +201,6 @@ def graficar_resultados(resultados, fs, canales):
         fig.update_yaxes(title_text="Amplitud", row=i, col=1)
         fig.update_yaxes(title_text="Magnitud", row=i, col=2)
     return fig
-
 
 def metodo_nakamura(datos_x, datos_y, datos_z, fs):
     from scipy.signal import savgol_filter
