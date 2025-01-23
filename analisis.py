@@ -14,7 +14,7 @@ import random
 
 st.set_page_config(page_title="Análisis del Acelerograma", layout="wide")
 
-# Inicio de sesión, todo lo relacionado a firebase.
+# Funciones de Firebase (sin cambios)
 def get_firebase_credentials():
     try:
         return dict(st.secrets["firebase"])
@@ -71,6 +71,7 @@ def get_user_files(user_id):
         st.error(f"Error al obtener los archivos del usuario: {str(e)}")
         return []
 
+# Funciones de procesamiento de señales
 def corregir_linea_base(datos):
     """Corrige la línea base de los datos"""
     return datos - np.mean(datos)
@@ -85,6 +86,7 @@ def calcular_espectro_fourier(datos):
     """Calcula el espectro de Fourier de los datos"""
     return np.abs(fft(datos))
 
+# Función analisis_hv modificada
 def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000):
     """
     Realiza el análisis H/V siguiendo el método especificado:
@@ -99,14 +101,13 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000):
     y = aplicar_filtro_pasabanda(corregir_linea_base(y), fs)
     z = aplicar_filtro_pasabanda(corregir_linea_base(z), fs)
     
-    # Arrays para almacenar resultados
-    ventanas_x = []
-    ventanas_y = []
-    ventanas_z = []
-    cocientes_xz = []
-    cocientes_yz = []
-    frecuencias = np.fft.fftfreq(tamano_ventana, d=1/fs)
-    frecuencias_positivas = frecuencias[:tamano_ventana//2]
+    # Inicialización de arrays para acumular resultados
+    cociente_xz = np.zeros(tamano_ventana // 2)
+    cociente_yz = np.zeros(tamano_ventana // 2)
+    cociente_xz2 = np.zeros(tamano_ventana // 2)
+    cociente_yz2 = np.zeros(tamano_ventana // 2)
+    
+    frecuencias = np.fft.fftfreq(tamano_ventana, d=1/fs)[:tamano_ventana//2]
     
     # Para cada ventana
     for _ in range(num_ventanas):
@@ -116,63 +117,46 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000):
         y1 = y[nini:nini+tamano_ventana]
         z1 = z[nini:nini+tamano_ventana]
         
-        ventanas_x.append(x1)
-        ventanas_y.append(y1)
-        ventanas_z.append(z1)
-        
         # Cálculo de espectros de Fourier
-        fx = np.abs(fft(x1))[:tamano_ventana//2]
-        fy = np.abs(fft(y1))[:tamano_ventana//2]
-        fz = np.abs(fft(z1))[:tamano_ventana//2]
+        fx = calcular_espectro_fourier(x1)[:tamano_ventana//2]
+        fy = calcular_espectro_fourier(y1)[:tamano_ventana//2]
+        fz = calcular_espectro_fourier(z1)[:tamano_ventana//2]
         
-        # Cálculo de cocientes
-        cociente_xz = fx/fz
-        cociente_yz = fy/fz
-        
-        cocientes_xz.append(cociente_xz)
-        cocientes_yz.append(cociente_yz)
+        # Acumulación de cocientes
+        cociente_xz += fx / fz / num_ventanas
+        cociente_yz += fy / fz / num_ventanas
+        cociente_xz2 += (fx / fz)**2 / num_ventanas
+        cociente_yz2 += (fy / fz)**2 / num_ventanas
     
-    # Cálculo de estadísticas
-    cocientes_xz = np.array(cocientes_xz)
-    cocientes_yz = np.array(cocientes_yz)
+    # Cálculo de varianza y desviación estándar
+    var_xz = cociente_xz2 - cociente_xz**2
+    var_yz = cociente_yz2 - cociente_yz**2
     
-    media_xz = np.mean(cocientes_xz, axis=0)
-    media_yz = np.mean(cocientes_yz, axis=0)
-    std_xz = np.std(cocientes_xz, axis=0)
-    std_yz = np.std(cocientes_yz, axis=0)
+    std_xz = np.sqrt(var_xz)
+    std_yz = np.sqrt(var_yz)
     
     # Cálculo del ratio H/V promedio
-    hv = np.sqrt((media_xz**2 + media_yz**2) / 2)
+    hv = np.sqrt((cociente_xz**2 + cociente_yz**2) / 2)
     hv_std = np.sqrt((std_xz**2 + std_yz**2) / 2)
     
-    # Cálculo de estadísticas globales para x1/z1 y y1/z1
-    promedio_global_xz = np.mean(cocientes_xz)
-    promedio_global_yz = np.mean(cocientes_yz)
-    std_global_xz = np.std(cocientes_xz)
-    std_global_yz = np.std(cocientes_yz)
-    
     return {
-        'frecuencias': frecuencias_positivas,
+        'frecuencias': frecuencias,
         'hv': hv,
         'hv_mas_std': hv + hv_std,
         'hv_menos_std': hv - hv_std,
-        'media_xz': media_xz,
-        'media_yz': media_yz,
+        'media_xz': cociente_xz,
+        'media_yz': cociente_yz,
         'std_xz': std_xz,
         'std_yz': std_yz,
-        'ventanas': {
-            'x': ventanas_x,
-            'y': ventanas_y,
-            'z': ventanas_z
-        },
         'estadisticas_globales': {
-            'promedio_xz': promedio_global_xz,
-            'promedio_yz': promedio_global_yz,
-            'std_xz': std_global_xz,
-            'std_yz': std_global_yz
+            'promedio_xz': np.mean(cociente_xz),
+            'promedio_yz': np.mean(cociente_yz),
+            'std_xz': np.mean(std_xz),
+            'std_yz': np.mean(std_yz)
         }
     }
 
+# Funciones de visualización (sin cambios)
 def graficar_canales_individuales(x, y, z, fs):
     """Grafica cada canal de forma individual después del filtrado"""
     fig = make_subplots(rows=3, cols=1, 
@@ -217,7 +201,7 @@ def graficar_hv(resultados_hv):
         x=resultados_hv['frecuencias'],
         y=resultados_hv['hv'],
         mode='lines',
-        name='mean',
+        name='media',
         line=dict(color='coral', width=2)
     ))
     
@@ -258,6 +242,7 @@ def graficar_hv(resultados_hv):
     
     return fig
 
+# Función principal
 def main():
     st.title("Análisis del Acelerograma")
     st.sidebar.image("logoUAMSis.png", use_container_width=True)
@@ -320,7 +305,7 @@ def main():
             st.write("Columnas en el archivo:", columnas_existentes)
 
             # Parámetros de análisis
-            st.sidebar.header("Parámetros de análisis")
+            st.sidebar.header("Parámetros dest.sidebar.header("Parámetros de análisis")
             fs = st.sidebar.number_input("Frecuencia de muestreo (Hz)", min_value=1, value=100)
             num_ventanas = st.sidebar.number_input("Número de ventanas para análisis H/V", min_value=1, max_value=100, value=20)
             tamano_ventana = st.sidebar.number_input("Tamaño de ventana (puntos)", min_value=100, max_value=10000, value=2000)
@@ -398,4 +383,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
