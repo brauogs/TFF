@@ -86,6 +86,9 @@ def calcular_espectro_fourier(datos):
     """Calcula el espectro de Fourier de los datos"""
     return np.abs(fft(datos))
 
+def dividir_entre_gravedad(x, y, z):
+    return x / 9.81, y / 9.81, z / 9.81
+
 # Función analisis_hv modificada
 # Función analisis_hv modificada
 def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5):
@@ -351,19 +354,31 @@ def main():
             tamano_ventana = st.sidebar.number_input("Tamaño de ventana (puntos)", min_value=100, max_value=10000, value=2000)
             dividir_por_g = st.sidebar.checkbox("Dividir datos por 9.81 (gravedad)", value=False)
 
-            
-            
             if st.button("Analizar datos"):
                 # Obtener y procesar datos
                 datos_x = df['x'].values
                 datos_y = df['y'].values
                 datos_z = df['z'].values
 
+                # Si el checkbox está marcado, dividir entre 9.81
                 if dividir_por_g:
                     datos_x = datos_x / 9.81
-                    datos_y = datos_z / 9.81
+                    datos_y = datos_y / 9.81
                     datos_z = datos_z / 9.81
                     
+                    # Crear DataFrame para mostrar comparación de datos
+                    df_dividido = df.copy()
+                    df_dividido['x'] = df['x'] / 9.81
+                    df_dividido['y'] = df['y'] / 9.81
+                    df_dividido['z'] = df['z'] / 9.81
+                    
+                    # Mostrar las primeras 10 filas comparando los datos originales y los divididos
+                    st.subheader("Comparación de datos originales y divididos entre 9.81")
+                    df_comparacion = df.head(10).copy()
+                    df_comparacion['x_dividido'] = df_dividido['x'].head(10)
+                    df_comparacion['y_dividido'] = df_dividido['y'].head(10)
+                    df_comparacion['z_dividido'] = df_dividido['z'].head(10)
+                    st.write(df_comparacion)
                 
                 # Corrección de línea base y filtrado
                 x_proc = aplicar_filtro_pasabanda(corregir_linea_base(datos_x), fs)
@@ -444,3 +459,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
