@@ -96,6 +96,9 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5
     4. Cálculo de cocientes H/V
     5. Análisis estadístico
     """
+    x1 = signal.hann(tamano_ventana) * x1
+    y1 = signal.hann(tamano_ventana) * y1
+    z1 = signal.hann(tamano_ventana) * z1
     # Corrección de línea base y filtrado
     x = aplicar_filtro_pasabanda(corregir_linea_base(x), fs)
     y = aplicar_filtro_pasabanda(corregir_linea_base(y), fs)
