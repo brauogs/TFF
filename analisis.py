@@ -106,7 +106,7 @@ def obtener_periodo_fundamental(frecuencias, hv):
     periodo_fundamental = 1 / frecuencia_fundamental
     return periodo_fundamental, frecuencia_fundamental
 
-def procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_taper):
+def procesar_datos_sismicos(df, canales, corte_bajo, corte_alto): #Removed porcentaje_taper
     fs_predeterminada = 100
     fs = fs_predeterminada
     
@@ -135,379 +135,171 @@ def procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_tape
     st.info(f"Frecuencia de muestreo utilizada: {fs} Hz")
 
     resultados = {}
-    espectros = {}
     for canal in canales:
-        datos_filtrados = aplicar_filtro_pasabanda(df[canal], corte_bajo=corte_bajo, corte_alto=corte_alto, fs=fs)
-        datos_con_taper = aplicar_taper(datos_filtrados, porcentaje=porcentaje_taper)
-        frecuencias, magnitudes = calcular_fft(datos_con_taper, fs)
-        frecuencias_psd, psd = calcular_espectro_potencia(datos_con_taper, fs)
-        
-        resultados[canal] = {
-            'serie_tiempo': df[canal],
-            'serie_filtrada': datos_con_taper,
-            'frecuencias_fft': frecuencias,
-            'magnitudes_fft': magnitudes,
-            'frecuencias_psd': frecuencias_psd,
-            'psd': psd
-        }
-        espectros[canal] = psd
-
-    if set(['x', 'y', 'z']).issubset(canales):
-        hv = calcular_hv(espectros)
-        periodo_fundamental, frecuencia_fundamental = obtener_periodo_fundamental(frecuencias_psd, hv)
-        resultados['hv'] = {
-            'frecuencias': frecuencias_psd,
-            'hv': hv,
-            'periodo_fundamental': periodo_fundamental,
-            'frecuencia_fundamental': frecuencia_fundamental
-        }
+        datos = df[canal].values
+        datos_corregidos = corregir_linea_base(datos)
+        datos_filtrados = aplicar_filtro_pasabanda(datos_corregidos, corte_bajo=corte_bajo, corte_alto=corte_alto, fs=fs)
+        resultados[canal] = datos_filtrados
     
     return resultados, fs, columna_tiempo
 
+def corregir_linea_base(datos):
+    return datos - np.mean(datos)
+
+def calcular_espectro_fourier(datos, fs):
+    n = len(datos)
+    frecuencias = fftfreq(n, 1/fs)[:n//2]
+    amplitudes = np.abs(fft(datos))[:n//2] * 2 / n
+    return frecuencias, amplitudes
+
+def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000):
+    resultados = []
+    for _ in range(num_ventanas):
+        nini = random.randint(0, len(x) - tamano_ventana)
+        x1 = x[nini:nini+tamano_ventana]
+        y1 = y[nini:nini+tamano_ventana]
+        z1 = z[nini:nini+tamano_ventana]
+        
+        fx, ax = calcular_espectro_fourier(x1, fs)
+        _, ay = calcular_espectro_fourier(y1, fs)
+        _, az = calcular_espectro_fourier(z1, fs)
+        
+        hv_x = ax / az
+        hv_y = ay / az
+        
+        resultados.append((hv_x, hv_y))
+    
+    return resultados, fx
+
 def graficar_resultados(resultados, fs, canales):
-    if len(canales) == 1:
-        canal = canales[0]
-        fig = make_subplots(rows=2, cols=2, subplot_titles=(
-            f"Canal {canal.upper()} (Original)",
-            f"Canal {canal.upper()} (Filtrado)",
-            f"Canal {canal.upper()} FFT",
-            "Secciones seleccionadas para FFT"),
-            vertical_spacing=0.1,
-            horizontal_spacing=0.05)
+    fig = make_subplots(rows=len(canales), cols=2, 
+                        subplot_titles=[f"Canal {canal.upper()} (Filtrado)" for canal in canales] + 
+                                       [f"Canal {canal.upper()} FFT" for canal in canales],
+                        vertical_spacing=0.1)
 
-        tiempo = np.arange(len(resultados[canal]['serie_tiempo'])) / fs
-
-        fig.add_trace(go.Scatter(x=tiempo, y=resultados[canal]['serie_tiempo'], name="Original"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=tiempo, y=resultados[canal]['serie_filtrada'], name="Filtrado"), row=1, col=2)
+    for i, canal in enumerate(canales, start=1):
+        tiempo = np.arange(len(resultados[canal])) / fs
+        fig.add_trace(go.Scatter(x=tiempo, y=resultados[canal], name=f"{canal.upper()} Filtrado"), row=i, col=1)
         
-        frecuencias_fft = resultados[canal]['frecuencias_fft']
-        magnitudes_fft = resultados[canal]['magnitudes_fft']
-        
-        fig.add_trace(go.Scatter(x=frecuencias_fft, y=magnitudes_fft, name="FFT"), row=2, col=1)
-    else:
-        fig = make_subplots(rows=3, cols=1, subplot_titles=(
-            "Canales Originales",
-            "Canales Filtrados",
-            "FFT de los Canales"),
-            vertical_spacing=0.1)
+        frecuencias, amplitudes = calcular_espectro_fourier(resultados[canal], fs)
+        fig.add_trace(go.Scatter(x=frecuencias, y=amplitudes, name=f"{canal.upper()} FFT"), row=i, col=2)
 
-        tiempo = np.arange(len(resultados['x']['serie_tiempo'])) / fs
-
-        for i, canal in enumerate(canales):
-            fig.add_trace(go.Scatter(x=tiempo, y=resultados[canal]['serie_tiempo'], name=f"{canal.upper()} Original"), row=1, col=1)
-            fig.add_trace(go.Scatter(x=tiempo, y=resultados[canal]['serie_filtrada'], name=f"{canal.upper()} Filtrado"), row=2, col=1)
-            fig.add_trace(go.Scatter(x=resultados[canal]['frecuencias_fft'], y=resultados[canal]['magnitudes_fft'], name=f"{canal.upper()} FFT"), row=3, col=1)
-
-    fig.update_layout(height=1200, width=1200, title_text="Análisis de Canales")
-    fig.update_xaxes(title_text="Tiempo (s)", row=1, col=1)
-    fig.update_xaxes(title_text="Tiempo (s)", row=1, col=2)
-    fig.update_xaxes(title_text="Frecuencia (Hz)", row=2, col=1)
-    fig.update_yaxes(title_text="Amplitud", row=1, col=1)
-    fig.update_yaxes(title_text="Amplitud", row=1, col=2)
-    fig.update_yaxes(title_text="Magnitud", row=2, col=1)
+    fig.update_layout(height=300*len(canales), width=1200, title_text="Análisis de Canales")
+    for i in range(1, len(canales)+1):
+        fig.update_xaxes(title_text="Tiempo (s)", row=i, col=1)
+        fig.update_xaxes(title_text="Frecuencia (Hz)", row=i, col=2)
+        fig.update_yaxes(title_text="Amplitud", row=i, col=1)
+        fig.update_yaxes(title_text="Magnitud", row=i, col=2)
     return fig
+
 
 def metodo_nakamura(datos_x, datos_y, datos_z, fs):
-    """
-    Implementación del método de Nakamura H/V siguiendo la metodología específica mostrada.
-    datos_x: componente E-W
-    datos_y: componente N-S
-    datos_z: componente vertical
-    fs: frecuencia de muestreo
-    """
-    from scipy.signal import welch, detrend
-    import numpy as np
+    from scipy.signal import savgol_filter
+    from scipy.stats import chi2
     
-    # 1. Preprocesamiento de señales
-    def preprocesar_senal(datos):
-        # Remover tendencia
-        datos = detrend(datos)
-        # Aplicar taper
-        window = np.hanning(len(datos))
-        return datos * window
+    # Calculate power spectral density for each component
+    f, Pxx = signal.welch(datos_x, fs, nperseg=min(len(datos_x), int(fs * 60)))
+    _, Pyy = signal.welch(datos_y, fs, nperseg=min(len(datos_y), int(fs * 60)))
+    _, Pzz = signal.welch(datos_z, fs, nperseg=min(len(datos_z), int(fs * 60)))
     
-    # Preprocesar todas las componentes
-    datos_x = preprocesar_senal(datos_x)
-    datos_y = preprocesar_senal(datos_y)
-    datos_z = preprocesar_senal(datos_z)
+    # Calculate H/V ratio
+    hv = np.sqrt((Pxx + Pyy) / (2 * Pzz))
     
-    # 2. Cálculo de espectros
-    def calcular_espectro(datos):
-        nperseg = int(fs * 25)  # Ventana de 25 segundos
-        noverlap = int(nperseg * 0.05)  # 5% de solapamiento
-        frecuencias, Pxx = welch(datos, fs, nperseg=nperseg, noverlap=noverlap, 
-                               detrend=False)  # Ya se aplicó detrend
-        return frecuencias, Pxx
+    # Smooth H/V curve
+    hv_smooth = savgol_filter(hv, window_length=11, polyorder=3)
     
-    # Calcular espectros para cada componente
-    f, Pxx = calcular_espectro(datos_x)  # E-W
-    _, Pyy = calcular_espectro(datos_y)  # N-S
-    _, Pzz = calcular_espectro(datos_z)  # Vertical
+    # Calculate confidence intervals
+    df = 4  # Degrees of freedom (can be adjusted)
+    ci_low = hv_smooth * chi2.ppf(0.05, df) / df
+    ci_high = hv_smooth * chi2.ppf(0.95, df) / df
     
-    # 3. Calcular espectro horizontal promedio
-    Phh = (Pxx + Pyy) / 2
+    # Find peaks
+    from scipy.signal import find_peaks
+    peaks, _ = find_peaks(hv_smooth, height=np.mean(hv_smooth), distance=int(len(f)/10))
     
-    # 4. Aplicar suavizado Konno-Ohmachi
-    def suavizado_konno_ohmachi(freq, spec, b=40):
-        suavizado = np.zeros_like(spec)
-        for i, fc in enumerate(freq):
-            if fc == 0:
-                continue
-            w = np.zeros_like(freq)
-            wb = np.abs(np.log10(freq/fc))
-            w = (np.sin(b * wb) / (b * wb))**4
-            w[np.isnan(w)] = 1
-            w = w / np.sum(w)
-            suavizado[i] = np.sum(spec * w)
-        return suavizado
+    # Sort peaks by amplitude
+    peak_amplitudes = hv_smooth[peaks]
+    sorted_peak_indices = np.argsort(peak_amplitudes)[::-1]
+    sorted_peaks = peaks[sorted_peak_indices]
     
-    # Aplicar suavizado a los espectros
-    Phh_smooth = suavizado_konno_ohmachi(f, Phh)
-    Pzz_smooth = suavizado_konno_ohmachi(f, Pzz)
-    Pxx_smooth = suavizado_konno_ohmachi(f, Pxx)
-    Pyy_smooth = suavizado_konno_ohmachi(f, Pyy)
+    # Get the top 3 peaks
+    top_peaks = sorted_peaks[:3]
+    fundamental_frequencies = f[top_peaks]
+    fundamental_periods = 1 / fundamental_frequencies
     
-    # 5. Calcular ratio H/V
-    # Evitar división por cero
-    epsilon = 1e-10
-    Pzz_smooth = np.where(Pzz_smooth < epsilon, epsilon, Pzz_smooth)
-    hv_ratio = np.sqrt(Phh_smooth / Pzz_smooth)
+    # SESAME criteria
+    def check_sesame_criteria(f0, hv_f0):
+        criteria_met = []
+        
+        # Criterion 1: f0 > 10 / window_length
+        window_length = len(datos_x) / fs
+        criteria_met.append(f0 > 10 / window_length)
+        
+        # Criterion 2: nc = window_length * f0 > 200
+        nc = window_length * f0
+        criteria_met.append(nc > 200)
+        
+        # Criterion 3: σA(f) < 2 for 0.5f0 < f < 2f0 when f0 > 0.5 Hz
+        #              σA(f) < 3 for 0.5f0 < f < 2f0 when f0 < 0.5 Hz
+        sigma_a = np.std(hv_smooth[(f > 0.5*f0) & (f < 2*f0)])
+        criteria_met.append(sigma_a < (3 if f0 < 0.5 else 2))
+        
+        # Criterion 4: σf < ε(f0) where ε(f0) is defined in SESAME guidelines
+        sigma_f = np.std(f[(f > 0.5*f0) & (f < 2*f0)])
+        epsilon = 0.25 * f0 if f0 > 1 else 0.25 * f0 ** 1.78
+        criteria_met.append(sigma_f < epsilon)
+        
+        # Criterion 5: Amplitude of the peak > 2
+        criteria_met.append(hv_f0 > 2)
+        
+        return criteria_met
     
-    # 6. Encontrar frecuencia fundamental
-    # Filtrar frecuencias de interés (0.5 - 10 Hz)
-    mask = (f >= 0.5) & (f <= 10)
-    f_filtered = f[mask]
-    hv_filtered = hv_ratio[mask]
+    sesame_results = [check_sesame_criteria(ff, hv_smooth[top_peaks[i]]) for i, ff in enumerate(fundamental_frequencies)]
     
-    # Encontrar pico principal cerca de 1.4 Hz
-    target_freq = 1.4
-    window = 0.5  # ±0.5 Hz alrededor de 1.4 Hz
-    freq_mask = (f_filtered >= target_freq - window) & (f_filtered <= target_freq + window)
-    
-    if np.any(freq_mask):
-        peak_idx = np.argmax(hv_filtered[freq_mask])
-        freq_range_indices = np.where(freq_mask)[0]
-        peak_freq_idx = freq_range_indices[peak_idx]
-        frecuencia_fundamental = f_filtered[peak_freq_idx]
-        frecuencias_fundamentales = [frecuencia_fundamental]
-        periodos_fundamentales = [1 / frecuencia_fundamental]
-    else:
-        st.warning("No se encontró un pico claro cerca de 1.4 Hz")
-        frecuencias_fundamentales = []
-        periodos_fundamentales = []
-    
-    # 7. Calcular intervalos de confianza
-    factor_freq = 1 / (1 + f)
-    hv_std = 0.2 * hv_ratio * factor_freq  # 20% de variabilidad típica
-    
-    hv_mas_std = hv_ratio + hv_std
-    hv_menos_std = hv_ratio - hv_std
-    
-    return (f, hv_ratio, hv_mas_std, hv_menos_std, frecuencias_fundamentales, periodos_fundamentales, 
-            Pxx_smooth, Pyy_smooth, Pzz_smooth, Phh_smooth, datos_x, datos_y, datos_z)
+    return f, hv_smooth, ci_low, ci_high, fundamental_frequencies, fundamental_periods, sesame_results
 
-def plot_nakamura_workflow(datos_x, datos_y, datos_z, f, Pxx, Pyy, Pzz, Phh, hv_ratio, fs):
-    """
-    Función para visualizar todo el proceso del método de Nakamura
-    """
-    # Crear figura con subplots
-    fig = make_subplots(
-        rows=4, cols=2,
-        subplot_titles=(
-            'Canal X', 'Canal Y',
-            'Canal X', 'Canal Y',
-            'Espectro Horizontal Promedio', 'Espectro Vertical',
-            'Relación espectral H/V', ''
-        ),
-        vertical_spacing=0.12,
-        horizontal_spacing=0.1
-    )
+def seleccionar_secciones_aleatorias(datos, fs, num_secciones=5, duracion_seccion=30):
+    longitud_seccion = int(duracion_seccion * fs)
+    longitud_datos = len(datos)
     
-    # 1. Series de tiempo
-    tiempo = np.arange(len(datos_x)) / fs
-    fig.add_trace(go.Scatter(x=tiempo, y=datos_x, name='Canal X', line=dict(color='green')), row=1, col=1)
-    fig.add_trace(go.Scatter(x=tiempo, y=datos_y, name='Canal Y', line=dict(color='blue')), row=1, col=2)
+    if longitud_datos <= longitud_seccion:
+        st.warning("La duración de la sección es mayor o igual que los datos disponibles. Se utilizará toda la serie de datos.")
+        return [(0, longitud_datos, datos)]
     
-    # 2. Espectros individuales
-    fig.add_trace(go.Scatter(x=f, y=Pxx, name='Espectro Canal X', line=dict(color='blue')), row=2, col=1)
-    fig.add_trace(go.Scatter(x=f, y=Pyy, name='Espectro Canal Y', line=dict(color='blue')), row=2, col=2)
+    inicio_maximo = longitud_datos - longitud_seccion
+    num_secciones_posibles = min(num_secciones, inicio_maximo)
     
-    # 3. Espectro horizontal promedio y vertical
-    fig.add_trace(go.Scatter(x=f, y=Phh, name='H promedio', line=dict(color='blue')), row=3, col=1)
-    fig.add_trace(go.Scatter(x=f, y=Pzz, name='Vertical', line=dict(color='blue')), row=3, col=2)
+    if num_secciones_posibles == 0:
+        st.warning("No hay suficientes datos para seleccionar secciones. Se utilizará toda la serie de datos.")
+        return [(0, longitud_datos, datos)]
     
-    # 4. Relación H/V
-    fig.add_trace(go.Scatter(x=f, y=hv_ratio, name='H/V', line=dict(color='blue')), row=4, col=1)
+    if num_secciones_posibles < num_secciones:
+        st.warning(f"Solo se pueden seleccionar {num_secciones_posibles} secciones con la duración especificada.")
     
-    # Actualizar ejes y diseño
-    for i in range(1, 5):
-        if i == 1:
-            fig.update_xaxes(title_text='Tiempo (s)', row=i, col=1)
-            fig.update_xaxes(title_text='Tiempo (s)', row=i, col=2)
-            fig.update_yaxes(title_text='Amplitud', row=i, col=1)
-            fig.update_yaxes(title_text='Amplitud', row=i, col=2)
-        else:
-            fig.update_xaxes(title_text='Frecuencia (Hz)', type='log', row=i, col=1)
-            fig.update_xaxes(title_text='Frecuencia (Hz)', type='log', row=i, col=2)
-            fig.update_yaxes(title_text='Amplitud', type='log', row=i, col=1)
-            fig.update_yaxes(title_text='Amplitud', type='log', row=i, col=2)
-    
-    # Actualizar diseño general
-    fig.update_layout(
-        height=1200,
-        showlegend=True,
-        title_text="Proceso completo del método de Nakamura",
-    )
-    
-    return fig
-
-
-
-def plot_espectros(f, Pxx, Pyy, Pzz, Phh):
-    """
-    Función para graficar los espectros individuales y promedio
-    """
-    fig = make_subplots(rows=3, cols=2, 
-                       subplot_titles=('Espectro X', 'Espectro Y',
-                                     'Espectro Horizontal Promedio', 'Espectro Vertical'))
-    
-    # Espectro E-W
-    fig.add_trace(go.Scatter(x=f, y=Pxx, name='X'), row=1, col=1)
-    
-    # Espectro N-S
-    fig.add_trace(go.Scatter(x=f, y=Pyy, name='Y'), row=1, col=2)
-    
-    # Espectro Horizontal Promedio
-    fig.add_trace(go.Scatter(x=f, y=Phh, name='H promedio'), row=2, col=1)
-    
-    # Espectro Vertical
-    fig.add_trace(go.Scatter(x=f, y=Pzz, name='Vertical'), row=2, col=2)
-    
-    fig.update_layout(height=800, showlegend=True)
-    fig.update_xaxes(title_text='Frecuencia (Hz)', type='log')
-    fig.update_yaxes(title_text='Amplitud', type='log')
-    
-    return fig
+    indices_inicio = random.sample(range(inicio_maximo + 1), num_secciones_posibles)
+    return [(inicio, min(inicio + longitud_seccion, longitud_datos), datos[inicio:min(inicio + longitud_seccion, longitud_datos)]) for inicio in indices_inicio]
 
 def descargar_datos_procesados(resultados, canales, fs):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         for canal in canales:
             # Ensure all arrays have the same length
-            tiempo = np.arange(len(resultados[canal]['serie_tiempo'])) / fs
-            original = resultados[canal]['serie_tiempo']
-            filtrado = resultados[canal]['serie_filtrada']
-            frecuencias_fft = resultados[canal]['frecuencias_fft']
-            magnitudes_fft = resultados[canal]['magnitudes_fft']
+            tiempo = np.arange(len(resultados[canal])) / fs
+            original = resultados[canal] #Simplified
             
             # Pad shorter arrays with NaN values
-            max_length = max(len(tiempo), len(original), len(filtrado), len(frecuencias_fft), len(magnitudes_fft))
+            max_length = max(len(tiempo), len(original))
             tiempo = np.pad(tiempo, (0, max_length - len(tiempo)), mode='constant', constant_values=np.nan)
             original = np.pad(original, (0, max_length - len(original)), mode='constant', constant_values=np.nan)
-            filtrado = np.pad(filtrado, (0, max_length - len(filtrado)), mode='constant', constant_values=np.nan)
-            frecuencias_fft = np.pad(frecuencias_fft, (0, max_length - len(frecuencias_fft)), mode='constant', constant_values=np.nan)
-            magnitudes_fft = np.pad(magnitudes_fft, (0, max_length - len(magnitudes_fft)), mode='constant', constant_values=np.nan)
             
             df = pd.DataFrame({
                 'Tiempo': tiempo,
-                'Original': original,
-                'Filtrado': filtrado,
-                'Frecuencias_FFT': frecuencias_fft,
-                'Magnitudes_FFT': magnitudes_fft
+                'Filtrado': original #Simplified
             })
             df.to_excel(writer, sheet_name=f'Canal_{canal}', index=False)
     
     output.seek(0)
     return output
-
-def plot_hv_degtra_style(f, hv_smooth, hv_plus_std, hv_minus_std, fundamental_frequencies):
-    fig = go.Figure()
-    
-    # Add grid style similar to DEGTRA
-    fig.update_layout(
-        plot_bgcolor='white',
-        xaxis=dict(
-            type='log',
-            showgrid=True,
-            gridwidth=1,
-            gridcolor='lightgray',
-            minor=dict(
-                showgrid=True,
-                gridwidth=0.5,
-                gridcolor='rgba(211, 211, 211, 0.5)'
-            ),
-            title='f, Hz',
-            ticktext=['10⁻¹', '10⁰', '10¹'],
-            tickvals=[0.1, 1, 10],
-            range=[-1, 1],  # 10^-1 to 10^1
-        ),
-        yaxis=dict(
-            type='log',
-            showgrid=True,
-            gridwidth=1,
-            gridcolor='lightgray',
-            minor=dict(
-                showgrid=True,
-                gridwidth=0.5,
-                gridcolor='rgba(211, 211, 211, 0.5)'
-            ),
-            title='H/V',
-            ticktext=['10⁻¹', '10⁰', '10¹'],
-            tickvals=[0.1, 1, 10],
-            range=[-1, 1],  # 10^-1 to 10^1
-        )
-    )
-    
-    # Add mean line
-    fig.add_trace(go.Scatter(
-        x=f,
-        y=hv_smooth,
-        mode='lines',
-        name='mean',
-        line=dict(color='red', width=1.5)
-    ))
-    
-    # Add standard deviation lines
-    fig.add_trace(go.Scatter(
-        x=f,
-        y=hv_plus_std,
-        mode='lines',
-        name='m+s',
-        line=dict(color='red', width=1, dash='dash')
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=f,
-        y=hv_minus_std,
-        mode='lines',
-        name='m-s',
-        line=dict(color='red', width=1, dash='dash')
-    ))
-    
-    # Add vertical lines for fundamental frequencies
-    for freq in fundamental_frequencies:
-        fig.add_vline(
-            x=freq,
-            line_dash="dot",
-            line_color="red",
-            opacity=0.5
-        )
-    
-    # Update layout
-    fig.update_layout(
-        title="Análisis H/V",
-        showlegend=True,
-        legend=dict(
-            yanchor="top",
-            y=0.99,
-            xanchor="right",
-            x=0.99
-        ),
-        width=800,
-        height=500
-    )
-    
-    return fig
 
 def main():
     st.title("Análisis del Acelerograma")
@@ -572,78 +364,69 @@ def main():
             columnas_existentes = df.columns.tolist()
             st.write("Columnas en el archivo:", columnas_existentes)
 
-            opciones_canal = ['x', 'y', 'z', 'Todos los canales']
-            canal_seleccionado = st.selectbox("Selecciona el canal a analizar", opciones_canal)
-
             st.sidebar.header("Parámetros de filtrado")
-            corte_bajo = st.sidebar.slider("Fmin (Hz)", 0.1, 10.0, 0.1, 0.1)
+            corte_bajo = st.sidebar.slider("Fmin (Hz)", 0.01, 1.0, 0.05, 0.01)
             corte_alto = st.sidebar.slider("Fmax (Hz)", 1.0, 50.0, 10.0, 0.1)
-            porcentaje_taper = st.sidebar.slider("Taper (%)", 1, 20, 5, 1)
 
-            num_rutinas_fft = st.number_input("Número de rutinas FFT a realizar", min_value=1, max_value=10, value=5)
+            num_ventanas = st.sidebar.number_input("Número de ventanas para análisis H/V", min_value=1, max_value=100, value=20)
 
-        if st.button("Analizar datos"):
-            canales = ['x', 'y', 'z'] if canal_seleccionado == 'Todos los canales' else [canal_seleccionado]
-            resultados, fs, columna_tiempo = procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_taper)
-            fig = graficar_resultados(resultados, fs, canales)
-            st.plotly_chart(fig)
-            
-            if canal_seleccionado == 'Todos los canales':
-                st.subheader("Análisis H/V (Método de Nakamura)")
+            if st.button("Analizar datos"):
+                canales = ['x', 'y', 'z']
+                resultados, fs, columna_tiempo = procesar_datos_sismicos(df, canales, corte_bajo, corte_alto)
+                fig = graficar_resultados(resultados, fs, canales)
+                st.plotly_chart(fig)
+
+                st.subheader("Análisis H/V")
+                resultados_hv, frecuencias_hv = analisis_hv(resultados['x'], resultados['y'], resultados['z'], fs, num_ventanas=num_ventanas)
                 
-                # Obtener datos filtrados
-                datos_x = resultados['x']['serie_filtrada']
-                datos_y = resultados['y']['serie_filtrada']
-                datos_z = resultados['z']['serie_filtrada']
+                hv_x = np.array([r[0] for r in resultados_hv])
+                hv_y = np.array([r[1] for r in resultados_hv])
                 
-                # Realizar análisis H/V
-                (f, hv_ratio, hv_mas_std, hv_menos_std, frecuencias_fundamentales, periodos_fundamentales,
-                Pxx, Pyy, Pzz, Phh, datos_x_proc, datos_y_proc, datos_z_proc) = metodo_nakamura(
-                    datos_x, datos_y, datos_z, fs
+                hv_x_promedio = np.mean(hv_x, axis=0)
+                hv_y_promedio = np.mean(hv_y, axis=0)
+                hv_x_std = np.std(hv_x, axis=0)
+                hv_y_std = np.std(hv_y, axis=0)
+
+                fig_hv = go.Figure()
+                fig_hv.add_trace(go.Scatter(x=frecuencias_hv, y=hv_x_promedio, name="H/V (X/Z) Promedio"))
+                fig_hv.add_trace(go.Scatter(x=frecuencias_hv, y=hv_x_promedio + hv_x_std, name="H/V (X/Z) +Std", line=dict(dash='dash')))
+                fig_hv.add_trace(go.Scatter(x=frecuencias_hv, y=hv_x_promedio - hv_x_std, name="H/V (X/Z) -Std", line=dict(dash='dash')))
+                fig_hv.add_trace(go.Scatter(x=frecuencias_hv, y=hv_y_promedio, name="H/V (Y/Z) Promedio"))
+                fig_hv.add_trace(go.Scatter(x=frecuencias_hv, y=hv_y_promedio + hv_y_std, name="H/V (Y/Z) +Std", line=dict(dash='dash')))
+                fig_hv.add_trace(go.Scatter(x=frecuencias_hv, y=hv_y_promedio - hv_y_std, name="H/V (Y/Z) -Std", line=dict(dash='dash')))
+                
+                fig_hv.update_layout(
+                    title="Análisis H/V",
+                    xaxis_title="Frecuencia (Hz)",
+                    yaxis_title="Ratio H/V",
+                    xaxis_type="log"
                 )
-                
-                if f is not None and len(frecuencias_fundamentales) > 0:
-                    # Mostrar el proceso completo
-                    fig_workflow = plot_nakamura_workflow(
-                        datos_x_proc, datos_y_proc, datos_z_proc,
-                        f, Pxx, Pyy, Pzz, Phh, hv_ratio, fs
-                    )
-                    st.plotly_chart(fig_workflow)
-                    
-                    # Graficar resultado H/V final con estilo DEGTRA
-                    fig_hv = plot_hv_degtra_style(f, hv_ratio, hv_mas_std, hv_menos_std, frecuencias_fundamentales)
-                    st.plotly_chart(fig_hv)
-                    
-                    # Mostrar resultados
-                    st.write("Frecuencias fundamentales identificadas:")
-                    for i, (freq, period) in enumerate(zip(frecuencias_fundamentales, periodos_fundamentales)):
-                        st.write(f"Pico {i+1}:")
-                        st.write(f"  Frecuencia: {freq:.2f} Hz")
-                        st.write(f"  Periodo: {period:.2f} segundos")
-                    
-                    # Comparar con la frecuencia del acelerómetro
-                    frecuencia_acelerometro = 1.4  # Hz
-                    st.write(f"Frecuencia fundamental del acelerómetro: {frecuencia_acelerometro} Hz")
-                    
-                    if frecuencias_fundamentales[0] < frecuencia_acelerometro:
-                        st.success("La frecuencia fundamental del suelo es menor que la del acelerómetro, lo que indica que las mediciones son confiables.")
-                    else:
-                        st.warning("La frecuencia fundamental del suelo es mayor o igual que la del acelerómetro. Esto podría afectar la confiabilidad de las mediciones en frecuencias más altas.")
-                
-                else:
-                    st.error("No se pudieron identificar frecuencias fundamentales válidas en el análisis.")
+                st.plotly_chart(fig_hv)
+
+                st.write("Resultados del análisis H/V:")
+                st.write(f"Promedio H/V (X/Z): {np.mean(hv_x_promedio):.2f}")
+                st.write(f"Promedio H/V (Y/Z): {np.mean(hv_y_promedio):.2f}")
+                st.write(f"Desviación estándar H/V (X/Z): {np.mean(hv_x_std):.2f}")
+                st.write(f"Desviación estándar H/V (Y/Z): {np.mean(hv_y_std):.2f}")
+
+                # Add download button for processed data
+                output = descargar_datos_procesados(resultados, canales, fs)
+                st.download_button(
+                    label="Descargar datos procesados",
+                    data=output,
+                    file_name="datos_procesados.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
 
     st.sidebar.header("Instrucciones")
     st.sidebar.markdown("""
     1. Inicie sesión o cree una cuenta.
     2. Suba un archivo CSV o TXT para analizar.
     3. Seleccione un archivo de sus archivos subidos.
-    4. Elija el canal a analizar (seleccione 'Todos los canales' para el análisis H/V).
-    5. Ajuste los parámetros de filtrado en la barra lateral.
-    6. Especifique el número de rutinas FFT a realizar.
-    7. Haga clic en 'Analizar datos' para ver los resultados.
-    8. Revise los gráficos FFT y H/V para cada sección aleatoria.
-    9. Descargue los datos procesados si lo desea.
+    4. Ajuste los parámetros de filtrado en la barra lateral.
+    5. Especifique el número de ventanas para el análisis H/V.
+    6. Haga clic en 'Analizar datos' para ver los resultados.
+    7. Revise los gráficos de los canales filtrados, FFT y análisis H/V.
     """)
 
 if __name__ == "__main__":
