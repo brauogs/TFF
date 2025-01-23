@@ -87,7 +87,7 @@ def calcular_espectro_fourier(datos):
     return np.abs(fft(datos))
 
 # Función analisis_hv modificada
-def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000):
+def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5):
     """
     Realiza el análisis H/V siguiendo el método especificado:
     1. Corrección de línea base y filtrado
@@ -101,11 +101,9 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000):
     y = aplicar_filtro_pasabanda(corregir_linea_base(y), fs)
     z = aplicar_filtro_pasabanda(corregir_linea_base(z), fs)
     
-    # Inicialización de arrays para acumular resultados
-    cociente_xz = np.zeros(tamano_ventana // 2)
-    cociente_yz = np.zeros(tamano_ventana // 2)
-    cociente_xz2 = np.zeros(tamano_ventana // 2)
-    cociente_yz2 = np.zeros(tamano_ventana // 2)
+    # Inicialización de arrays
+    cocientes_xz = [np.zeros(tamano_ventana // 2) for _ in range(n_cocientes)]
+    cocientes_yz = [np.zeros(tamano_ventana // 2) for _ in range(n_cocientes)]
     
     frecuencias = np.fft.fftfreq(tamano_ventana, d=1/fs)[:tamano_ventana//2]
     
@@ -122,35 +120,40 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000):
         fy = calcular_espectro_fourier(y1)[:tamano_ventana//2]
         fz = calcular_espectro_fourier(z1)[:tamano_ventana//2]
         
-        # Acumulación de cocientes
-        cociente_xz += fx / fz / num_ventanas
-        cociente_yz += fy / fz / num_ventanas
-        cociente_xz2 += (fx / fz)**2 / num_ventanas
-        cociente_yz2 += (fy / fz)**2 / num_ventanas
-    
+        for i in range(n_cocientes):
+            cocientes_xz[i] += (fx / fz)**(i+1) / num_ventanas
+            cocientes_yz[i] += (fy / fz)**(i+1) / num_ventanas
+
     # Cálculo de varianza y desviación estándar
-    var_xz = cociente_xz2 - cociente_xz**2
-    var_yz = cociente_yz2 - cociente_yz**2
+    var_xz = cocientes_xz[1] - cocientes_xz[0]**2
+    var_yz = cocientes_yz[1] - cocientes_yz[0]**2
     
     std_xz = np.sqrt(var_xz)
     std_yz = np.sqrt(var_yz)
     
     # Cálculo del ratio H/V promedio
-    hv = np.sqrt((cociente_xz**2 + cociente_yz**2) / 2)
+    hv = np.sqrt((cocientes_xz[0]**2 + cocientes_yz[0]**2) / 2)
     hv_std = np.sqrt((std_xz**2 + std_yz**2) / 2)
+    
+    # Cálculo de la frecuencia fundamental
+    indice_max = np.argmax(hv)
+    frecuencia_fundamental = frecuencias[indice_max]
     
     return {
         'frecuencias': frecuencias,
         'hv': hv,
         'hv_mas_std': hv + hv_std,
         'hv_menos_std': hv - hv_std,
-        'media_xz': cociente_xz,
-        'media_yz': cociente_yz,
+        'media_xz': cocientes_xz[0],
+        'media_yz': cocientes_yz[0],
         'std_xz': std_xz,
         'std_yz': std_yz,
+        'cocientes_xz': cocientes_xz,
+        'cocientes_yz': cocientes_yz,
+        'frecuencia_fundamental': frecuencia_fundamental,
         'estadisticas_globales': {
-            'promedio_xz': np.mean(cociente_xz),
-            'promedio_yz': np.mean(cociente_yz),
+            'promedio_xz': np.mean(cocientes_xz[0]),
+            'promedio_yz': np.mean(cocientes_yz[0]),
             'std_xz': np.mean(std_xz),
             'std_yz': np.mean(std_yz)
         }
@@ -351,12 +354,13 @@ def main():
                 
                 # Mostrar estadísticas
                 st.subheader("Estadísticas del análisis H/V")
+                st.write(f"Frecuencia fundamental: {resultados_hv['frecuencia_fundamental']:.2f} Hz")
                 st.write("Estadísticas globales de los cocientes de amplitud:")
                 st.write(f"Promedio x/z: {resultados_hv['estadisticas_globales']['promedio_xz']:.4f}")
                 st.write(f"Desviación estándar x/z: {resultados_hv['estadisticas_globales']['std_xz']:.4f}")
                 st.write(f"Promedio y/z: {resultados_hv['estadisticas_globales']['promedio_yz']:.4f}")
                 st.write(f"Desviación estándar y/z: {resultados_hv['estadisticas_globales']['std_yz']:.4f}")
-                
+
                 st.write("\nEstadísticas detalladas:")
                 st.write(f"Promedio x/z: {np.mean(resultados_hv['media_xz']):.4f}")
                 st.write(f"Promedio y/z: {np.mean(resultados_hv['media_yz']):.4f}")
@@ -364,6 +368,12 @@ def main():
                 st.write(f"Promedio - Desviación estándar x/z: {np.mean(resultados_hv['media_xz'] - resultados_hv['std_xz']):.4f}")
                 st.write(f"Promedio + Desviación estándar y/z: {np.mean(resultados_hv['media_yz'] + resultados_hv['std_yz']):.4f}")
                 st.write(f"Promedio - Desviación estándar y/z: {np.mean(resultados_hv['media_yz'] - resultados_hv['std_yz']):.4f}")
+
+                # Mostrar cocientes adicionales
+                st.subheader("Cocientes adicionales")
+                for i in range(1, len(resultados_hv['cocientes_xz'])):
+                    st.write(f"Cociente {i+1} x/z: {np.mean(resultados_hv['cocientes_xz'][i]):.4f}")
+                    st.write(f"Cociente {i+1} y/z: {np.mean(resultados_hv['cocientes_yz'][i]):.4f}")
 
     st.sidebar.header("Instrucciones")
     st.sidebar.markdown("""
@@ -383,3 +393,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
