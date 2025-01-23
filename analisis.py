@@ -420,135 +420,6 @@ def descargar_datos_procesados(resultados, canales, fs):
     output.seek(0)
     return output
 
-def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000):
-    """
-    Realiza el análisis H/V siguiendo el método especificado:
-    1. Corrección de línea base y filtrado
-    2. Selección de ventanas aleatorias
-    3. Cálculo de espectros de Fourier
-    4. Cálculo de cocientes H/V
-    5. Análisis estadístico
-    """
-    # Arrays para almacenar resultados
-    cocientes_hv = []
-    frecuencias = np.fft.fftfreq(tamano_ventana, d=1/fs)
-    frecuencias_positivas = frecuencias[:tamano_ventana//2]
-    
-    # Para cada ventana
-    for _ in range(num_ventanas):
-        # Selección aleatoria de ventana
-        nini = random.randint(0, len(x) - tamano_ventana)
-        x1 = x[nini:nini+tamano_ventana]
-        y1 = y[nini:nini+tamano_ventana]
-        z1 = z[nini:nini+tamano_ventana]
-        
-        # Cálculo de espectros de Fourier
-        fx = np.abs(fft(x1))[:tamano_ventana//2]
-        fy = np.abs(fft(y1))[:tamano_ventana//2]
-        fz = np.abs(fft(z1))[:tamano_ventana//2]
-        
-        # Cálculo del cociente H/V
-        hv = np.sqrt((fx**2 + fy**2) / (2 * fz**2))
-        cocientes_hv.append(hv)
-    
-    # Cálculo de estadísticas
-    cocientes_hv = np.array(cocientes_hv)
-    media_hv = np.mean(cocientes_hv, axis=0)
-    std_hv = np.std(cocientes_hv, axis=0)
-    
-    # Identificación de frecuencia fundamental
-    indice_pico = np.argmax(media_hv)
-    frecuencia_fundamental = frecuencias_positivas[indice_pico]
-    periodo_fundamental = 1/frecuencia_fundamental
-    
-    # Frecuencia fundamental del acelerómetro (Nyquist/2 como aproximación)
-    freq_acel = fs/4
-    
-    return {
-        'frecuencias': frecuencias_positivas,
-        'media_hv': media_hv,
-        'std_hv': std_hv,
-        'frecuencia_fundamental': frecuencia_fundamental,
-        'periodo_fundamental': periodo_fundamental,
-        'frecuencia_accelerometro': freq_acel
-    }
-
-def graficar_hv(resultados_hv):
-    """
-    Genera el gráfico H/V similar al mostrado en la imagen
-    """
-    fig = go.Figure()
-    
-    # Línea media
-    fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'],
-        y=resultados_hv['media_hv'],
-        mode='lines',
-        name='mean',
-        line=dict(color='coral', width=2)
-    ))
-    
-    # Líneas de desviación estándar
-    fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'],
-        y=resultados_hv['media_hv'] + resultados_hv['std_hv'],
-        mode='lines',
-        name='m+s',
-        line=dict(color='coral', width=1, dash='dash')
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'],
-        y=resultados_hv['media_hv'] - resultados_hv['std_hv'],
-        mode='lines',
-        name='m-s',
-        line=dict(color='coral', width=1, dash='dash')
-    ))
-    
-    # Línea vertical en la frecuencia fundamental
-    fig.add_vline(
-        x=resultados_hv['frecuencia_fundamental'],
-        line_dash="dot",
-        line_color="red"
-    )
-    
-    # Configuración del layout
-    fig.update_layout(
-        title="Análisis H/V",
-        xaxis_title="f, Hz",
-        yaxis_title="H/V",
-        xaxis_type="log",
-        yaxis_type="log",
-        xaxis_range=[-1, 2],  # 10^-1 a 10^2
-        yaxis_range=[-1, 1],  # 10^-1 a 10^1
-        plot_bgcolor='white',
-        width=800,
-        height=500
-    )
-    
-    # Agregar cuadrícula
-    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
-    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
-    
-    return fig
-
-def mostrar_resultados_hv(resultados_hv):
-    """
-    Muestra los resultados del análisis H/V
-    """
-    st.subheader("Frecuencias fundamentales identificadas:")
-    st.write("Pico 1:")
-    st.write(f"Frecuencia: {resultados_hv['frecuencia_fundamental']:.2f} Hz")
-    st.write(f"Periodo: {resultados_hv['periodo_fundamental']:.2f} segundos")
-    st.write(f"Frecuencia fundamental del acelerómetro: {resultados_hv['frecuencia_accelerometro']:.1f} Hz")
-    
-    if resultados_hv['frecuencia_fundamental'] < resultados_hv['frecuencia_accelerometro']:
-        st.success("La frecuencia fundamental del suelo es menor que la del acelerómetro, lo que indica que las mediciones son confiables.")
-    else:
-        st.warning("La frecuencia fundamental del suelo es mayor o igual que la del acelerómetro, lo que podría indicar limitaciones en las mediciones.")
-
-
-
 def plot_hv_degtra_style(f, hv_smooth, hv_plus_std, hv_minus_std, fundamental_frequencies):
     fig = go.Figure()
     
@@ -712,31 +583,55 @@ def main():
             num_rutinas_fft = st.number_input("Número de rutinas FFT a realizar", min_value=1, max_value=10, value=5)
 
         if st.button("Analizar datos"):
-            canales = ['x', 'y', 'z']
-            resultados = procesar_datos_sismicos(df, canales, fs)
-            
-            # Mostrar gráficos de señales y FFT
+            canales = ['x', 'y', 'z'] if canal_seleccionado == 'Todos los canales' else [canal_seleccionado]
+            resultados, fs, columna_tiempo = procesar_datos_sismicos(df, canales, corte_bajo, corte_alto, porcentaje_taper)
             fig = graficar_resultados(resultados, fs, canales)
             st.plotly_chart(fig)
             
-            # Análisis H/V
-            st.subheader("Análisis H/V")
-            resultados_hv = analisis_hv(
-                resultados['x'],
-                resultados['y'],
-                resultados['z'],
-                fs,
-                num_ventanas=num_ventanas,
-                tamano_ventana=tamano_ventana
-            )
-            
-            # Mostrar gráfico H/V
-            fig_hv = graficar_hv(resultados_hv)
-            st.plotly_chart(fig_hv)
-            
-            # Mostrar resultados numéricos
-            mostrar_resultados_hv(resultados_hv)
-
+            if canal_seleccionado == 'Todos los canales':
+                st.subheader("Análisis H/V (Método de Nakamura)")
+                
+                # Obtener datos filtrados
+                datos_x = resultados['x']['serie_filtrada']
+                datos_y = resultados['y']['serie_filtrada']
+                datos_z = resultados['z']['serie_filtrada']
+                
+                # Realizar análisis H/V
+                (f, hv_ratio, hv_mas_std, hv_menos_std, frecuencias_fundamentales, periodos_fundamentales,
+                Pxx, Pyy, Pzz, Phh, datos_x_proc, datos_y_proc, datos_z_proc) = metodo_nakamura(
+                    datos_x, datos_y, datos_z, fs
+                )
+                
+                if f is not None and len(frecuencias_fundamentales) > 0:
+                    # Mostrar el proceso completo
+                    fig_workflow = plot_nakamura_workflow(
+                        datos_x_proc, datos_y_proc, datos_z_proc,
+                        f, Pxx, Pyy, Pzz, Phh, hv_ratio, fs
+                    )
+                    st.plotly_chart(fig_workflow)
+                    
+                    # Graficar resultado H/V final con estilo DEGTRA
+                    fig_hv = plot_hv_degtra_style(f, hv_ratio, hv_mas_std, hv_menos_std, frecuencias_fundamentales)
+                    st.plotly_chart(fig_hv)
+                    
+                    # Mostrar resultados
+                    st.write("Frecuencias fundamentales identificadas:")
+                    for i, (freq, period) in enumerate(zip(frecuencias_fundamentales, periodos_fundamentales)):
+                        st.write(f"Pico {i+1}:")
+                        st.write(f"  Frecuencia: {freq:.2f} Hz")
+                        st.write(f"  Periodo: {period:.2f} segundos")
+                    
+                    # Comparar con la frecuencia del acelerómetro
+                    frecuencia_acelerometro = 1.4  # Hz
+                    st.write(f"Frecuencia fundamental del acelerómetro: {frecuencia_acelerometro} Hz")
+                    
+                    if frecuencias_fundamentales[0] < frecuencia_acelerometro:
+                        st.success("La frecuencia fundamental del suelo es menor que la del acelerómetro, lo que indica que las mediciones son confiables.")
+                    else:
+                        st.warning("La frecuencia fundamental del suelo es mayor o igual que la del acelerómetro. Esto podría afectar la confiabilidad de las mediciones en frecuencias más altas.")
+                
+                else:
+                    st.error("No se pudieron identificar frecuencias fundamentales válidas en el análisis.")
 
     st.sidebar.header("Instrucciones")
     st.sidebar.markdown("""
