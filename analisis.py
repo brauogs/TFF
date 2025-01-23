@@ -4,7 +4,7 @@ from firebase_admin import credentials, auth, storage
 import pandas as pd
 import numpy as np
 from scipy import signal
-from scipy.fft import fft, fftfreq
+from scipy.fft import fft
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import tempfile
@@ -14,6 +14,7 @@ import random
 
 st.set_page_config(page_title="Análisis del Acelerograma", layout="wide")
 
+# Firebase setup functions (unchanged)
 def get_firebase_credentials():
     try:
         return dict(st.secrets["firebase"])
@@ -70,6 +71,10 @@ def get_user_files(user_id):
         st.error(f"Error al obtener los archivos del usuario: {str(e)}")
         return []
 
+# Updated signal processing functions
+def corregir_linea_base(datos):
+    return datos - np.mean(datos)
+
 def aplicar_filtro_pasabanda(datos, fs, corte_bajo=0.05, corte_alto=10, orden=4):
     nyq = 0.5 * fs
     bajo = corte_bajo / nyq
@@ -77,54 +82,12 @@ def aplicar_filtro_pasabanda(datos, fs, corte_bajo=0.05, corte_alto=10, orden=4)
     b, a = signal.butter(orden, [bajo, alto], btype='band')
     return signal.filtfilt(b, a, datos)
 
-def aplicar_taper(datos, porcentaje=5):
-    taper = signal.windows.tukey(len(datos), alpha=porcentaje/100)
-    return datos * taper
-
-def calcular_fft(datos, fs):
-    n = len(datos)
-    resultado_fft = fft(datos)
-    frecuencias = np.fft.fftfreq(n, 1/fs)[:n//2]
-    magnitudes = 2.0/n * np.abs(resultado_fft[0:n//2])
-    return frecuencias, magnitudes
-
-def calcular_espectro_potencia(datos, fs, nperseg=None):
-    if nperseg is None:
-        nperseg = min(len(datos), int(fs * 60))  # 60 segundos o la longitud total de los datos
-    frecuencias, Pxx = signal.welch(datos, fs, nperseg=nperseg)
-    return frecuencias, Pxx
-
-def calcular_hv(espectros):
-    h_cuadrado = espectros['x'] + espectros['y']
-    hv = np.sqrt(h_cuadrado) / espectros['z']
-    return hv
-
-def obtener_periodo_fundamental(frecuencias, hv):
-    indice_max = np.argmax(hv)
-    frecuencia_fundamental = frecuencias[indice_max]
-    periodo_fundamental = 1 / frecuencia_fundamental
-    return periodo_fundamental, frecuencia_fundamental
-
-def procesar_datos_sismicos(df, canales, fs):
-    resultados = {}
-    for canal in canales:
-        datos = df[canal].values
-        datos_corregidos = corregir_linea_base(datos)
-        datos_filtrados = aplicar_filtro_pasabanda(datos_corregidos, fs)
-        resultados[canal] = datos_filtrados
-    
-    return resultados
-
-def corregir_linea_base(datos):
-    return datos - np.mean(datos)
-
 def calcular_espectro_fourier(datos):
     return np.abs(fft(datos))
 
 def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000):
     cocientes_xz = []
     cocientes_yz = []
-    frecuencias_fundamentales = []
     
     for _ in range(num_ventanas):
         nini = random.randint(0, len(x) - tamano_ventana)
@@ -136,20 +99,22 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000):
         fft_y1 = calcular_espectro_fourier(y1)
         fft_z1 = calcular_espectro_fourier(z1)
         
-        cociente_xz = fft_x1 / fft_z1
-        cociente_yz = fft_y1 / fft_z1
+        cociente_xz = np.mean(fft_x1 / fft_z1)
+        cociente_yz = np.mean(fft_y1 / fft_z1)
         
-        cocientes_xz.append(np.mean(cociente_xz))
-        cocientes_yz.append(np.mean(cociente_yz))
-        
-        # Calcular la frecuencia fundamental
-        hv = np.sqrt((cociente_xz**2 + cociente_yz**2) / 2)
-        frecuencias = np.fft.fftfreq(tamano_ventana, d=1/fs)
-        indice_max = np.argmax(hv)
-        frecuencia_fundamental = frecuencias[indice_max]
-        frecuencias_fundamentales.append(frecuencia_fundamental)
+        cocientes_xz.append(cociente_xz)
+        cocientes_yz.append(cociente_yz)
     
-    return cocientes_xz, cocientes_yz, frecuencias_fundamentales
+    return cocientes_xz, cocientes_yz
+
+def procesar_datos_sismicos(df, canales, fs):
+    resultados = {}
+    for canal in canales:
+        datos = df[canal].values
+        datos_corregidos = corregir_linea_base(datos)
+        datos_filtrados = aplicar_filtro_pasabanda(datos_corregidos, fs)
+        resultados[canal] = datos_filtrados
+    return resultados
 
 def graficar_resultados(resultados, fs, canales):
     fig = make_subplots(rows=len(canales), cols=2, 
@@ -161,7 +126,7 @@ def graficar_resultados(resultados, fs, canales):
         tiempo = np.arange(len(resultados[canal])) / fs
         fig.add_trace(go.Scatter(x=tiempo, y=resultados[canal], name=f"{canal.upper()} Filtrado"), row=i, col=1)
         
-        frecuencias = fftfreq(len(resultados[canal]), 1/fs)[:len(resultados[canal])//2]
+        frecuencias = np.fft.fftfreq(len(resultados[canal]), d=1/fs)[:len(resultados[canal])//2]
         amplitudes = np.abs(fft(resultados[canal]))[:len(resultados[canal])//2] * 2 / len(resultados[canal])
         fig.add_trace(go.Scatter(x=frecuencias, y=amplitudes, name=f"{canal.upper()} FFT"), row=i, col=2)
 
@@ -173,11 +138,10 @@ def graficar_resultados(resultados, fs, canales):
         fig.update_yaxes(title_text="Magnitud", row=i, col=2)
     return fig
 
-def guardar_estadisticas(cocientes_xz, cocientes_yz, frecuencias_fundamentales):
+def guardar_estadisticas(cocientes_xz, cocientes_yz):
     datos = {
         'Cociente x/z': cocientes_xz,
-        'Cociente y/z': cocientes_yz,
-        'Frecuencia fundamental': frecuencias_fundamentales
+        'Cociente y/z': cocientes_yz
     }
     df = pd.DataFrame(datos)
     return df.to_csv(index=False).encode('utf-8')
@@ -186,18 +150,10 @@ def descargar_datos_procesados(resultados, canales, fs):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         for canal in canales:
-            # Ensure all arrays have the same length
             tiempo = np.arange(len(resultados[canal])) / fs
-            original = resultados[canal] #Simplified
-            
-            # Pad shorter arrays with NaN values
-            max_length = max(len(tiempo), len(original))
-            tiempo = np.pad(tiempo, (0, max_length - len(tiempo)), mode='constant', constant_values=np.nan)
-            original = np.pad(original, (0, max_length - len(original)), mode='constant', constant_values=np.nan)
-            
             df = pd.DataFrame({
                 'Tiempo': tiempo,
-                'Filtrado': original #Simplified
+                'Filtrado': resultados[canal]
             })
             df.to_excel(writer, sheet_name=f'Canal_{canal}', index=False)
     
@@ -279,19 +235,16 @@ def main():
                 st.plotly_chart(fig)
 
                 st.subheader("Análisis H/V")
-                cocientes_xz, cocientes_yz, frecuencias_fundamentales = analisis_hv(resultados['x'], resultados['y'], resultados['z'], fs, num_ventanas, tamano_ventana)
+                cocientes_xz, cocientes_yz = analisis_hv(resultados['x'], resultados['y'], resultados['z'], fs, num_ventanas, tamano_ventana)
                 
                 promedio_xz = np.mean(cocientes_xz)
                 desviacion_xz = np.std(cocientes_xz)
                 promedio_yz = np.mean(cocientes_yz)
                 desviacion_yz = np.std(cocientes_yz)
-                frecuencia_fundamental_promedio = np.mean(frecuencias_fundamentales)
 
                 st.write("Resultados del análisis H/V:")
                 st.write(f"Cociente x/z: Promedio = {promedio_xz:.4f}, Promedio + Desviación = {promedio_xz + desviacion_xz:.4f}, Promedio - Desviación = {promedio_xz - desviacion_xz:.4f}")
                 st.write(f"Cociente y/z: Promedio = {promedio_yz:.4f}, Promedio + Desviación = {promedio_yz + desviacion_yz:.4f}, Promedio - Desviación = {promedio_yz - desviacion_yz:.4f}")
-                st.write(f"Frecuencia fundamental promedio: {frecuencia_fundamental_promedio:.2f} Hz")
-                st.write(f"Periodo fundamental promedio: {1/frecuencia_fundamental_promedio:.2f} segundos")
 
                 fig_hv = go.Figure()
                 fig_hv.add_trace(go.Scatter(y=cocientes_xz, name="Cociente x/z", mode='markers'))
@@ -299,13 +252,8 @@ def main():
                 fig_hv.update_layout(title="Cocientes H/V por ventana", xaxis_title="Número de ventana", yaxis_title="Cociente H/V")
                 st.plotly_chart(fig_hv)
 
-                fig_freq = go.Figure()
-                fig_freq.add_trace(go.Scatter(y=frecuencias_fundamentales, mode='markers', name="Frecuencia fundamental"))
-                fig_freq.update_layout(title="Frecuencias fundamentales por ventana", xaxis_title="Número de ventana", yaxis_title="Frecuencia (Hz)")
-                st.plotly_chart(fig_freq)
-
                 # Generar y descargar estadísticas
-                csv = guardar_estadisticas(cocientes_xz, cocientes_yz, frecuencias_fundamentales)
+                csv = guardar_estadisticas(cocientes_xz, cocientes_yz)
                 st.download_button(
                     label="Descargar estadísticas H/V",
                     data=csv,
