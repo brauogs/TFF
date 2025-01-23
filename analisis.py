@@ -358,71 +358,71 @@ def main():
                         datos_x = df['x'].values
                         datos_y = df['y'].values
                         datos_z = df['z'].values
-                    if dividir_por_g:
-                        datos_x = datos_x / 9.81
-                        datos_y = datos_y / 9.81
-                        datos_z = datos_z / 9.81
-                
-                    # Corrección de línea base y filtrado
-                    x_proc = aplicar_filtro_pasabanda(corregir_linea_base(datos_x), fs)
-                    y_proc = aplicar_filtro_pasabanda(corregir_linea_base(datos_y), fs)
-                    z_proc = aplicar_filtro_pasabanda(corregir_linea_base(datos_z), fs)
+                        if dividir_por_g:
+                            datos_x = datos_x / 9.81
+                            datos_y = datos_y / 9.81
+                            datos_z = datos_z / 9.81
                     
-                    # Mostrar canales filtrados
-                    st.subheader("Canales filtrados (0.05-10 Hz)")
-                    fig_canales = graficar_canales_individuales(x_proc, y_proc, z_proc, fs)
-                    st.plotly_chart(fig_canales)
-                    
-                    # Realizar análisis H/V
-                    resultados_hv = analisis_hv(
-                        x_proc, y_proc, z_proc,
-                        fs=fs,
-                        num_ventanas=num_ventanas,
-                        tamano_ventana=tamano_ventana
-                    )
-                    
-                    # Mostrar ejemplo de ventana seleccionada
-                    st.subheader("Ejemplo de ventana seleccionada")
-                    nini = random.randint(0, len(x_proc) - tamano_ventana)
-                    x1 = x_proc[nini:nini+tamano_ventana]
-                    y1 = y_proc[nini:nini+tamano_ventana]
-                    z1 = z_proc[nini:nini+tamano_ventana]
-                    
-                    fig_ventana = graficar_ventana(x1, y1, z1, fs, nini)
-                    st.plotly_chart(fig_ventana)
-                    
-                    # Mostrar gráfico H/V
-                    st.subheader("Análisis H/V")
-                    fig_hv = graficar_hv(resultados_hv)
-                    st.plotly_chart(fig_hv)
-                    
-                    # Mostrar estadísticas
-                    st.subheader("Estadísticas del análisis H/V")
-                    if resultados_hv['frecuencia_fundamental']:
-                        st.write(f"Frecuencia fundamental: {resultados_hv['frecuencia_fundamental']:.2f} Hz")
-                        st.write(f"Periodo fundamental: {resultados_hv['periodo_fundamental']:.2f} s")
-                    else:
-                        st.write("No se pudo determinar una frecuencia fundamental válida en el rango de 0.05 a 10 Hz.")
-    
-                    st.write("Estadísticas globales de los cocientes de amplitud:")
-                    st.write(f"Promedio x/z: {resultados_hv['estadisticas_globales']['promedio_xz']:.4f}")
-                    st.write(f"Desviación estándar x/z: {resultados_hv['estadisticas_globales']['std_xz']:.4f}")
-                    st.write(f"Promedio y/z: {resultados_hv['estadisticas_globales']['promedio_yz']:.4f}")
-                    st.write(f"Desviación estándar y/z: {resultados_hv['estadisticas_globales']['std_yz']:.4f}")
-    
-                    st.write("\nEstadísticas detalladas:")
-                    st.write(f"Promedio x/z: {np.mean(resultados_hv['media_xz']):.4f}")
-                    st.write(f"Promedio y/z: {np.mean(resultados_hv['media_yz']):.4f}")
-                    st.write(f"Promedio + Desviación estándar x/z: {np.mean(resultados_hv['media_xz'] + resultados_hv['std_xz']):.4f}")
-                    st.write(f"Promedio - Desviación estándar x/z: {np.mean(resultados_hv['media_xz'] - resultados_hv['std_xz']):.4f}")
-                    st.write(f"Promedio + Desviación estándar y/z: {np.mean(resultados_hv['media_yz'] + resultados_hv['std_yz']):.4f}")
-                    st.write(f"Promedio - Desviación estándar y/z: {np.mean(resultados_hv['media_yz'] - resultados_hv['std_yz']):.4f}")
-    
-                    # Mostrar cocientes adicionales
-                    st.subheader("Cocientes adicionales")
-                    for i in range(1, len(resultados_hv['cocientes_xz'])):
-                        st.write(f"Cociente {i+1} x/z: {np.mean(resultados_hv['cocientes_xz'][i]):.4f}")
-                        st.write(f"Cociente {i+1} y/z: {np.mean(resultados_hv['cocientes_yz'][i]):.4f}")
+                        # Corrección de línea base y filtrado
+                        x_proc = aplicar_filtro_pasabanda(corregir_linea_base(datos_x), fs)
+                        y_proc = aplicar_filtro_pasabanda(corregir_linea_base(datos_y), fs)
+                        z_proc = aplicar_filtro_pasabanda(corregir_linea_base(datos_z), fs)
+                        
+                        # Mostrar canales filtrados
+                        st.subheader("Canales filtrados (0.05-10 Hz)")
+                        fig_canales = graficar_canales_individuales(x_proc, y_proc, z_proc, fs)
+                        st.plotly_chart(fig_canales)
+                        
+                        # Realizar análisis H/V
+                        resultados_hv = analisis_hv(
+                            x_proc, y_proc, z_proc,
+                            fs=fs,
+                            num_ventanas=num_ventanas,
+                            tamano_ventana=tamano_ventana
+                        )
+                        
+                        # Mostrar ejemplo de ventana seleccionada
+                        st.subheader("Ejemplo de ventana seleccionada")
+                        nini = random.randint(0, len(x_proc) - tamano_ventana)
+                        x1 = x_proc[nini:nini+tamano_ventana]
+                        y1 = y_proc[nini:nini+tamano_ventana]
+                        z1 = z_proc[nini:nini+tamano_ventana]
+                        
+                        fig_ventana = graficar_ventana(x1, y1, z1, fs, nini)
+                        st.plotly_chart(fig_ventana)
+                        
+                        # Mostrar gráfico H/V
+                        st.subheader("Análisis H/V")
+                        fig_hv = graficar_hv(resultados_hv)
+                        st.plotly_chart(fig_hv)
+                        
+                        # Mostrar estadísticas
+                        st.subheader("Estadísticas del análisis H/V")
+                        if resultados_hv['frecuencia_fundamental']:
+                            st.write(f"Frecuencia fundamental: {resultados_hv['frecuencia_fundamental']:.2f} Hz")
+                            st.write(f"Periodo fundamental: {resultados_hv['periodo_fundamental']:.2f} s")
+                        else:
+                            st.write("No se pudo determinar una frecuencia fundamental válida en el rango de 0.05 a 10 Hz.")
+        
+                        st.write("Estadísticas globales de los cocientes de amplitud:")
+                        st.write(f"Promedio x/z: {resultados_hv['estadisticas_globales']['promedio_xz']:.4f}")
+                        st.write(f"Desviación estándar x/z: {resultados_hv['estadisticas_globales']['std_xz']:.4f}")
+                        st.write(f"Promedio y/z: {resultados_hv['estadisticas_globales']['promedio_yz']:.4f}")
+                        st.write(f"Desviación estándar y/z: {resultados_hv['estadisticas_globales']['std_yz']:.4f}")
+        
+                        st.write("\nEstadísticas detalladas:")
+                        st.write(f"Promedio x/z: {np.mean(resultados_hv['media_xz']):.4f}")
+                        st.write(f"Promedio y/z: {np.mean(resultados_hv['media_yz']):.4f}")
+                        st.write(f"Promedio + Desviación estándar x/z: {np.mean(resultados_hv['media_xz'] + resultados_hv['std_xz']):.4f}")
+                        st.write(f"Promedio - Desviación estándar x/z: {np.mean(resultados_hv['media_xz'] - resultados_hv['std_xz']):.4f}")
+                        st.write(f"Promedio + Desviación estándar y/z: {np.mean(resultados_hv['media_yz'] + resultados_hv['std_yz']):.4f}")
+                        st.write(f"Promedio - Desviación estándar y/z: {np.mean(resultados_hv['media_yz'] - resultados_hv['std_yz']):.4f}")
+        
+                        # Mostrar cocientes adicionales
+                        st.subheader("Cocientes adicionales")
+                        for i in range(1, len(resultados_hv['cocientes_xz'])):
+                            st.write(f"Cociente {i+1} x/z: {np.mean(resultados_hv['cocientes_xz'][i]):.4f}")
+                            st.write(f"Cociente {i+1} y/z: {np.mean(resultados_hv['cocientes_yz'][i]):.4f}")
 
     st.sidebar.header("Instrucciones")
     st.sidebar.markdown("""
