@@ -135,13 +135,24 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5
     hv = np.sqrt((cocientes_xz[0]**2 + cocientes_yz[0]**2) / 2)
     hv_std = np.sqrt((std_xz**2 + std_yz**2) / 2)
     
+    # Suavizado de la curva H/V
+    hv_suavizado = signal.savgol_filter(hv, window_length=11, polyorder=3)
+    
     # Cálculo de la frecuencia fundamental
-    indice_max = np.argmax(hv)
+    indice_max = np.argmax(hv_suavizado)
     frecuencia_fundamental = frecuencias[indice_max]
+    
+    # Asegurar que la frecuencia fundamental esté dentro del rango del filtro
+    if frecuencia_fundamental < 0.05 or frecuencia_fundamental > 10:
+        frecuencia_fundamental = None
+    
+    # Cálculo del periodo fundamental
+    periodo_fundamental = 1 / frecuencia_fundamental if frecuencia_fundamental else None
     
     return {
         'frecuencias': frecuencias,
         'hv': hv,
+        'hv_suavizado': hv_suavizado,
         'hv_mas_std': hv + hv_std,
         'hv_menos_std': hv - hv_std,
         'media_xz': cocientes_xz[0],
@@ -151,6 +162,7 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5
         'cocientes_xz': cocientes_xz,
         'cocientes_yz': cocientes_yz,
         'frecuencia_fundamental': frecuencia_fundamental,
+        'periodo_fundamental': periodo_fundamental,
         'estadisticas_globales': {
             'promedio_xz': np.mean(cocientes_xz[0]),
             'promedio_yz': np.mean(cocientes_yz[0]),
@@ -204,8 +216,17 @@ def graficar_hv(resultados_hv):
         x=resultados_hv['frecuencias'],
         y=resultados_hv['hv'],
         mode='lines',
-        name='media',
-        line=dict(color='coral', width=2)
+        name='H/V',
+        line=dict(color='blue', width=1)
+    ))
+    
+    # Línea suavizada
+    fig.add_trace(go.Scatter(
+        x=resultados_hv['frecuencias'],
+        y=resultados_hv['hv_suavizado'],
+        mode='lines',
+        name='H/V suavizado',
+        line=dict(color='red', width=2)
     ))
     
     # Líneas de desviación estándar
@@ -214,7 +235,7 @@ def graficar_hv(resultados_hv):
         y=resultados_hv['hv_mas_std'],
         mode='lines',
         name='m+s',
-        line=dict(color='coral', width=1, dash='dash')
+        line=dict(color='gray', width=1, dash='dash')
     ))
     
     fig.add_trace(go.Scatter(
@@ -222,8 +243,18 @@ def graficar_hv(resultados_hv):
         y=resultados_hv['hv_menos_std'],
         mode='lines',
         name='m-s',
-        line=dict(color='coral', width=1, dash='dash')
+        line=dict(color='gray', width=1, dash='dash')
     ))
+    
+    # Marcar la frecuencia fundamental
+    if resultados_hv['frecuencia_fundamental']:
+        fig.add_trace(go.Scatter(
+            x=[resultados_hv['frecuencia_fundamental']],
+            y=[resultados_hv['hv_suavizado'][np.argmax(resultados_hv['hv_suavizado'])]],
+            mode='markers',
+            name='Frecuencia fundamental',
+            marker=dict(color='green', size=10, symbol='star')
+        ))
     
     # Configuración del layout
     fig.update_layout(
@@ -232,7 +263,7 @@ def graficar_hv(resultados_hv):
         yaxis_title="H/V",
         xaxis_type="log",
         yaxis_type="log",
-        xaxis_range=[-1, 1],
+        xaxis_range=[-1.3, 1],  # Ajustado para mostrar mejor el rango de 0.05 a 10 Hz
         yaxis_range=[-1, 1],
         plot_bgcolor='white',
         width=800,
@@ -354,7 +385,12 @@ def main():
                 
                 # Mostrar estadísticas
                 st.subheader("Estadísticas del análisis H/V")
-                st.write(f"Frecuencia fundamental: {resultados_hv['frecuencia_fundamental']:.2f} Hz")
+                if resultados_hv['frecuencia_fundamental']:
+                    st.write(f"Frecuencia fundamental: {resultados_hv['frecuencia_fundamental']:.2f} Hz")
+                    st.write(f"Periodo fundamental: {resultados_hv['periodo_fundamental']:.2f} s")
+                else:
+                    st.write("No se pudo determinar una frecuencia fundamental válida en el rango de 0.05 a 10 Hz.")
+
                 st.write("Estadísticas globales de los cocientes de amplitud:")
                 st.write(f"Promedio x/z: {resultados_hv['estadisticas_globales']['promedio_xz']:.4f}")
                 st.write(f"Desviación estándar x/z: {resultados_hv['estadisticas_globales']['std_xz']:.4f}")
