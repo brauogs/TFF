@@ -294,7 +294,7 @@ def main():
         tab1, tab2 = st.tabs(["Iniciar sesión", "Registrarse"])
         
         with tab1:
-            email = st.text_input("Correo electrónico")
+            email = st.text_input("Correo electrónicos")
             password = st.text_input("Contraseña", type="password")
             if st.button("Iniciar sesión"):
                 user = sign_in(email, password)
