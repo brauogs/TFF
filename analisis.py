@@ -139,8 +139,8 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5
         # Acumular los valores
         Cociente_xz += fx / fz / num_ventanas
         Cociente_yz += fy / fz / num_ventanas
-        Cociente_xz2 += (fx ** 2) / (fz ** 2) / num_ventanas
-        Cociente_yz2 += (fy ** 2) / (fz ** 2) / num_ventanas
+        Cociente_xz2 += (fx / fz) ** 2 / num_ventanas
+        Cociente_yz2 += (fy / fz) ** 2 / num_ventanas
 
     # Cálculo de varianza y desviación estándar
     Var_xz = Cociente_xz2 - (Cociente_xz ** 2)
@@ -158,13 +158,14 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5
     # Cálculo de la frecuencia fundamental
     indice_max = np.argmax(hv_suavizado)
     frecuencia_fundamental = frecuencias[indice_max]
-    
-    # Asegurar que la frecuencia fundamental esté dentro del rango del filtro
-    if frecuencia_fundamental < 0.05 or frecuencia_fundamental > 10:
-        frecuencia_fundamental = None
-    
+
     # Cálculo del periodo fundamental
-    periodo_fundamental = 1 / frecuencia_fundamental if frecuencia_fundamental else None
+    periodo_fundamental = 1 / frecuencia_fundamental
+
+    # Agregar una nota si la frecuencia fundamental está fuera del rango esperado
+    nota_frecuencia = ""
+    if frecuencia_fundamental < 0.05 or frecuencia_fundamental > 10:
+        nota_frecuencia = "Nota: La frecuencia fundamental está fuera del rango de 0.05 a 10 Hz."
     
     # Estadísticas globales
     estadisticas_globales = {
@@ -188,7 +189,8 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5
         'cocientes_yz': [Cociente_yz, Cociente_yz2],
         'frecuencia_fundamental': frecuencia_fundamental,
         'periodo_fundamental': periodo_fundamental,
-        'estadisticas_globales': estadisticas_globales
+        'estadisticas_globales': estadisticas_globales,
+        'nota_frecuencia': nota_frecuencia
     }
 
 # Funciones de visualización (con cambios)
@@ -462,11 +464,10 @@ def main():
                 
                 # Mostrar estadísticas
                 st.subheader("Estadísticas del análisis H/V")
-                if resultados_hv['frecuencia_fundamental']:
-                    st.write(f"Frecuencia fundamental: {resultados_hv['frecuencia_fundamental']:.2f} Hz")
-                    st.write(f"Periodo fundamental: {resultados_hv['periodo_fundamental']:.2f} s")
-                else:
-                    st.write("No se pudo determinar una frecuencia fundamental válida en el rango de 0.05 a 10 Hz.")
+                st.write(f"Frecuencia fundamental: {resultados_hv['frecuencia_fundamental']:.2f} Hz")
+                st.write(f"Periodo fundamental: {resultados_hv['periodo_fundamental']:.2f} s")
+                if resultados_hv['nota_frecuencia']:
+                    st.warning(resultados_hv['nota_frecuencia'])
 
                 st.write("Estadísticas globales de los cocientes de amplitud:")
                 st.write(f"Promedio x/z: {resultados_hv['estadisticas_globales']['promedio_xz']:.4f}")
