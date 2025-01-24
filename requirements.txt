@@ -10,3 +10,4 @@ firebase-admin
 flask
 streamlit-autorefresh
 xlsxwriter
+kaleido
