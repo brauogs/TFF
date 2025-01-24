@@ -11,6 +11,7 @@ import tempfile
 import os
 import io
 import random
+from io import BytesIO
 
 st.set_page_config(page_title="Análisis del Acelerograma", layout="wide")
 
@@ -71,6 +72,16 @@ def get_user_files(user_id):
         st.error(f"Error al obtener los archivos del usuario: {str(e)}")
         return []
 
+def download_file(user_id, file_name):
+    try:
+        bucket = storage.bucket()
+        blob = bucket.blob(f"users/{user_id}/{file_name}")
+        content = blob.download_as_bytes()
+        return content
+    except Exception as e:
+        st.error(f"Error al descargar el archivo: {str(e)}")
+        return None
+
 # Funciones de procesamiento de señales
 def corregir_linea_base(datos):
     """Corrige la línea base de los datos"""
@@ -89,7 +100,6 @@ def calcular_espectro_fourier(datos):
 def dividir_entre_gravedad(x, y, z):
     return x / 9.81, y / 9.81, z / 9.81
 
-# Función analisis_hv modificada
 # Función analisis_hv modificada
 def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5):
     """
@@ -180,8 +190,9 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5
         'periodo_fundamental': periodo_fundamental,
         'estadisticas_globales': estadisticas_globales
     }
-# Funciones de visualización (sin cambios)
-def graficar_canales_individuales(x, y, z, fs):
+
+# Funciones de visualización (con cambios)
+def graficar_canales_individuales(x, y, z, fs, st):
     """Grafica cada canal de forma individual después del filtrado"""
     fig = make_subplots(rows=3, cols=1, 
                         subplot_titles=('Canal X', 'Canal Y', 'Canal Z'))
@@ -193,9 +204,18 @@ def graficar_canales_individuales(x, y, z, fs):
     fig.add_trace(go.Scatter(x=tiempo, y=z, name='Z'), row=3, col=1)
     
     fig.update_layout(height=800, showlegend=True, title_text="Canales filtrados (0.05-10 Hz)")
+    
+    # Add download button for graph image
+    img_bytes = fig.to_image(format="png")
+    btn = st.download_button(
+        label="Descargar gráfica como imagen",
+        data=img_bytes,
+        file_name="grafica_canales.png",
+        mime="image/png"
+    )
     return fig
 
-def graficar_ventana(x1, y1, z1, fs, nini):
+def graficar_ventana(x1, y1, z1, fs, nini, st):
     """Grafica una ventana seleccionada de los datos"""
     fig = make_subplots(rows=3, cols=1, 
                         subplot_titles=(
@@ -214,9 +234,18 @@ def graficar_ventana(x1, y1, z1, fs, nini):
     
     fig.update_layout(height=800, showlegend=True, 
                      title_text=f"Ventana seleccionada ({frecuencias[0]:.2f} Hz - {frecuencias[-1]:.2f} Hz)")
+    
+    # Add download button for graph image
+    img_bytes = fig.to_image(format="png")
+    btn = st.download_button(
+        label="Descargar gráfica como imagen",
+        data=img_bytes,
+        file_name="grafica_ventana.png",
+        mime="image/png"
+    )
     return fig
 
-def graficar_hv(resultados_hv):
+def graficar_hv(resultados_hv, st):
     """Genera el gráfico H/V similar al mostrado en la imagen"""
     fig = go.Figure()
     
@@ -283,6 +312,14 @@ def graficar_hv(resultados_hv):
     fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
     
+    # Add download button for graph image
+    img_bytes = fig.to_image(format="png")
+    btn = st.download_button(
+        label="Descargar gráfica como imagen",
+        data=img_bytes,
+        file_name="grafica_hv.png",
+        mime="image/png"
+    )
     return fig
 
 # Función principal
@@ -347,6 +384,16 @@ def main():
             columnas_existentes = df.columns.tolist()
             st.write("Columnas en el archivo:", columnas_existentes)
 
+            # Add download button for the selected file
+            file_content = download_file(st.session_state.user.uid, selected_file)
+            if file_content:
+                st.download_button(
+                    label="Descargar archivo seleccionado",
+                    data=file_content,
+                    file_name=selected_file,
+                    mime="text/csv"
+                )
+
             # Parámetros de análisis
             st.sidebar.header("Parámetros de análisis")
             fs = st.sidebar.number_input("Frecuencia de muestreo (Hz)", min_value=1, value=100)
@@ -387,7 +434,7 @@ def main():
                 
                 # Mostrar canales filtrados
                 st.subheader("Canales filtrados (0.05-10 Hz)")
-                fig_canales = graficar_canales_individuales(x_proc, y_proc, z_proc, fs)
+                fig_canales = graficar_canales_individuales(x_proc, y_proc, z_proc, fs, st)
                 st.plotly_chart(fig_canales)
                 
                 # Realizar análisis H/V
@@ -405,12 +452,12 @@ def main():
                 y1 = y_proc[nini:nini+tamano_ventana]
                 z1 = z_proc[nini:nini+tamano_ventana]
                 
-                fig_ventana = graficar_ventana(x1, y1, z1, fs, nini)
+                fig_ventana = graficar_ventana(x1, y1, z1, fs, nini, st)
                 st.plotly_chart(fig_ventana)
                 
                 # Mostrar gráfico H/V
                 st.subheader("Análisis H/V")
-                fig_hv = graficar_hv(resultados_hv)
+                fig_hv = graficar_hv(resultados_hv, st)
                 st.plotly_chart(fig_hv)
                 
                 # Mostrar estadísticas
@@ -459,3 +506,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
