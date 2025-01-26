@@ -101,7 +101,7 @@ def dividir_entre_gravedad(x, y, z):
     return x / 9.81, y / 9.81, z / 9.81
 
 # Función analisis_hv modificada
-def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, fmin=0.1, fmax=20):
+def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5):
     """
     Realiza el análisis H/V siguiendo el método especificado:
     1. Corrección de línea base y filtrado
@@ -111,9 +111,9 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, fmin=0.1, fma
     5. Análisis estadístico
     """
     # Corrección de línea base y filtrado
-    x = aplicar_filtro_pasabanda(corregir_linea_base(x), fs, fmin, fmax)
-    y = aplicar_filtro_pasabanda(corregir_linea_base(y), fs, fmin, fmax)
-    z = aplicar_filtro_pasabanda(corregir_linea_base(z), fs, fmin, fmax)
+    x = aplicar_filtro_pasabanda(corregir_linea_base(x), fs)
+    y = aplicar_filtro_pasabanda(corregir_linea_base(y), fs)
+    z = aplicar_filtro_pasabanda(corregir_linea_base(z), fs)
     
     # Inicialización de acumuladores
     Cociente_xz = np.zeros(tamano_ventana // 2)
@@ -122,7 +122,6 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, fmin=0.1, fma
     Cociente_yz2 = np.zeros(tamano_ventana // 2)
     
     frecuencias = np.fft.fftfreq(tamano_ventana, d=1/fs)[:tamano_ventana//2]
-    frecuencias_validas = (frecuencias >= fmin) & (frecuencias <= fmax)
     
     # Para cada ventana
     for _ in range(num_ventanas):
@@ -137,17 +136,17 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, fmin=0.1, fma
         fy = calcular_espectro_fourier(y1)[:tamano_ventana//2]
         fz = calcular_espectro_fourier(z1)[:tamano_ventana//2]
         
-        # Acumular los valores solo para frecuencias válidas
-        Cociente_xz[frecuencias_validas] += (fx[frecuencias_validas] / fz[frecuencias_validas]) / num_ventanas
-        Cociente_yz[frecuencias_validas] += (fy[frecuencias_validas] / fz[frecuencias_validas]) / num_ventanas
-        Cociente_xz2[frecuencias_validas] += (fx[frecuencias_validas] / fz[frecuencias_validas]) ** 2 / num_ventanas
-        Cociente_yz2[frecuencias_validas] += (fy[frecuencias_validas] / fz[frecuencias_validas]) ** 2 / num_ventanas
+        # Acumular los valores
+        Cociente_xz += fx / fz / num_ventanas
+        Cociente_yz += fy / fz / num_ventanas
+        Cociente_xz2 += (fx / fz) ** 2 / num_ventanas
+        Cociente_yz2 += (fy / fz) ** 2 / num_ventanas
 
     # Cálculo de varianza y desviación estándar
     Var_xz = Cociente_xz2 - (Cociente_xz ** 2)
     Var_yz = Cociente_yz2 - (Cociente_yz ** 2)
-    Desviacion_xz = np.sqrt(np.abs(Var_xz))  # Usar valor absoluto para evitar warnings
-    Desviacion_yz = np.sqrt(np.abs(Var_yz))
+    Desviacion_xz = np.sqrt(Var_xz)
+    Desviacion_yz = np.sqrt(Var_yz)
     
     # Cálculo del ratio H/V promedio
     hv = np.sqrt((Cociente_xz ** 2 + Cociente_yz ** 2) / 2)
@@ -157,35 +156,41 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, fmin=0.1, fma
     hv_suavizado = signal.savgol_filter(hv, window_length=11, polyorder=3)
     
     # Cálculo de la frecuencia fundamental
-    indice_max = np.argmax(hv_suavizado[frecuencias_validas])
-    frecuencia_fundamental = frecuencias[frecuencias_validas][indice_max]
+    indice_max = np.argmax(hv_suavizado)
+    frecuencia_fundamental = frecuencias[indice_max]
 
     # Cálculo del periodo fundamental
     periodo_fundamental = 1 / frecuencia_fundamental
 
+    # Agregar una nota si la frecuencia fundamental está fuera del rango esperado
+    nota_frecuencia = ""
+    if frecuencia_fundamental < 0.05 or frecuencia_fundamental > 10:
+        nota_frecuencia = "Nota: La frecuencia fundamental está fuera del rango de 0.05 a 10 Hz."
+    
     # Estadísticas globales
     estadisticas_globales = {
-        'promedio_xz': np.mean(Cociente_xz[frecuencias_validas]),
-        'promedio_yz': np.mean(Cociente_yz[frecuencias_validas]),
-        'std_xz': np.mean(Desviacion_xz[frecuencias_validas]),
-        'std_yz': np.mean(Desviacion_yz[frecuencias_validas])
+        'promedio_xz': np.mean(Cociente_xz),
+        'promedio_yz': np.mean(Cociente_yz),
+        'std_xz': np.mean(Desviacion_xz),
+        'std_yz': np.mean(Desviacion_yz)
     }
     
     return {
-        'frecuencias': frecuencias[frecuencias_validas],
-        'hv': hv[frecuencias_validas],
-        'hv_suavizado': hv_suavizado[frecuencias_validas],
-        'hv_mas_std': (hv + hv_std)[frecuencias_validas],
-        'hv_menos_std': (hv - hv_std)[frecuencias_validas],
-        'media_xz': Cociente_xz[frecuencias_validas],
-        'media_yz': Cociente_yz[frecuencias_validas],
-        'std_xz': Desviacion_xz[frecuencias_validas],
-        'std_yz': Desviacion_yz[frecuencias_validas],
-        'cocientes_xz': [Cociente_xz[frecuencias_validas], Cociente_xz2[frecuencias_validas]],
-        'cocientes_yz': [Cociente_yz[frecuencias_validas], Cociente_yz2[frecuencias_validas]],
+        'frecuencias': frecuencias,
+        'hv': hv,
+        'hv_suavizado': hv_suavizado,
+        'hv_mas_std': hv + hv_std,
+        'hv_menos_std': hv - hv_std,
+        'media_xz': Cociente_xz,
+        'media_yz': Cociente_yz,
+        'std_xz': Desviacion_xz,
+        'std_yz': Desviacion_yz,
+        'cocientes_xz': [Cociente_xz, Cociente_xz2],
+        'cocientes_yz': [Cociente_yz, Cociente_yz2],
         'frecuencia_fundamental': frecuencia_fundamental,
         'periodo_fundamental': periodo_fundamental,
-        'estadisticas_globales': estadisticas_globales
+        'estadisticas_globales': estadisticas_globales,
+        'nota_frecuencia': nota_frecuencia
     }
 
 # Funciones de visualización (con cambios)
@@ -396,8 +401,6 @@ def main():
             fs = st.sidebar.number_input("Frecuencia de muestreo (Hz)", min_value=1, value=100)
             num_ventanas = st.sidebar.number_input("Número de ventanas para análisis H/V", min_value=1, max_value=100, value=20)
             tamano_ventana = st.sidebar.number_input("Tamaño de ventana (puntos)", min_value=100, max_value=10000, value=2000)
-            fmin = st.sidebar.number_input("Frecuencia mínima de análisis (Hz)", min_value=0.01, max_value=10.0, value=0.1, step=0.01)
-            fmax = st.sidebar.number_input("Frecuencia máxima de análisis (Hz)", min_value=1.0, max_value=50.0, value=20.0, step=0.1)
             dividir_por_g = st.sidebar.checkbox("Dividir datos por 9.81 (gravedad)", value=False)
 
             if st.button("Analizar datos"):
@@ -441,9 +444,7 @@ def main():
                     x_proc, y_proc, z_proc,
                     fs=fs,
                     num_ventanas=num_ventanas,
-                    tamano_ventana=tamano_ventana,
-                    fmin=fmin,
-                    fmax=fmax
+                    tamano_ventana=tamano_ventana
                 )
                 
                 # Mostrar ejemplo de ventana seleccionada
@@ -465,8 +466,8 @@ def main():
                 st.subheader("Estadísticas del análisis H/V")
                 st.write(f"Frecuencia fundamental: {resultados_hv['frecuencia_fundamental']:.2f} Hz")
                 st.write(f"Periodo fundamental: {resultados_hv['periodo_fundamental']:.2f} s")
-                if resultados_hv['frecuencia_fundamental'] < fmin or resultados_hv['frecuencia_fundamental'] > fmax:
-                    st.warning(f"La frecuencia fundamental está fuera del rango de análisis especificado ({fmin}-{fmax} Hz).")
+                if resultados_hv['nota_frecuencia']:
+                    st.warning(resultados_hv['nota_frecuencia'])
 
                 st.write("Estadísticas globales de los cocientes de amplitud:")
                 st.write(f"Promedio x/z: {resultados_hv['estadisticas_globales']['promedio_xz']:.4f}")
@@ -497,8 +498,6 @@ def main():
        - Frecuencia de muestreo
        - Número de ventanas para análisis H/V
        - Tamaño de ventana
-       - Frecuencia mínima de análisis
-       - Frecuencia máxima de análisis
     5. Haga clic en 'Analizar datos' para ver:
        - Canales filtrados individualmente
        - Ventana seleccionada aleatoriamente
