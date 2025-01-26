@@ -93,24 +93,27 @@ def aplicar_filtro_pasabanda(datos, fs, fmin=0.05, fmax=10):
     b, a = signal.butter(4, [fmin/nyq, fmax/nyq], btype='band')
     return signal.filtfilt(b, a, datos)
 
-def calcular_espectro_fourier(datos):
+def calcular_espectro_fourier(datos, fs):
     """Calcula el espectro de Fourier de los datos"""
-    return np.abs(fft(datos))
+    n = len(datos)
+    frecuencias = fftfreq(n, d=1/fs)[:n//2]
+    amplitudes = np.abs(fft(datos))[:n//2] * 2 / n
+    return frecuencias, amplitudes
 
 def dividir_entre_gravedad(x, y, z):
     return x / 9.81, y / 9.81, z / 9.81
 
 # Función analisis_hv modificada
-def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5):
+def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000):
     """
     Realiza el análisis H/V siguiendo el método especificado:
-    1. Corrección de línea base y filtrado
+    1. Corrección de línea base y filtrado para cada vector
     2. Selección de ventanas aleatorias
     3. Cálculo de espectros de Fourier
     4. Cálculo de cocientes H/V
     5. Análisis estadístico
     """
-    # Corrección de línea base y filtrado
+    # Corrección de línea base y filtrado para cada vector
     x = aplicar_filtro_pasabanda(corregir_linea_base(x), fs)
     y = aplicar_filtro_pasabanda(corregir_linea_base(y), fs)
     z = aplicar_filtro_pasabanda(corregir_linea_base(z), fs)
@@ -121,8 +124,6 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5
     Cociente_xz2 = np.zeros(tamano_ventana // 2)
     Cociente_yz2 = np.zeros(tamano_ventana // 2)
     
-    frecuencias = np.fft.fftfreq(tamano_ventana, d=1/fs)[:tamano_ventana//2]
-    
     # Para cada ventana
     for _ in range(num_ventanas):
         # Selección aleatoria de ventana
@@ -132,9 +133,9 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5
         z1 = z[nini:nini+tamano_ventana]
         
         # Cálculo de espectros de Fourier
-        fx = calcular_espectro_fourier(x1)[:tamano_ventana//2]
-        fy = calcular_espectro_fourier(y1)[:tamano_ventana//2]
-        fz = calcular_espectro_fourier(z1)[:tamano_ventana//2]
+        frecuencias, fx = calcular_espectro_fourier(x1, fs)
+        _, fy = calcular_espectro_fourier(y1, fs)
+        _, fz = calcular_espectro_fourier(z1, fs)
         
         # Acumular los valores
         Cociente_xz += fx / fz / num_ventanas
@@ -158,14 +159,7 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5
     # Cálculo de la frecuencia fundamental
     indice_max = np.argmax(hv_suavizado)
     frecuencia_fundamental = frecuencias[indice_max]
-
-    # Cálculo del periodo fundamental
     periodo_fundamental = 1 / frecuencia_fundamental
-
-    # Agregar una nota si la frecuencia fundamental está fuera del rango esperado
-    nota_frecuencia = ""
-    if frecuencia_fundamental < 0.05 or frecuencia_fundamental > 10:
-        nota_frecuencia = "Nota: La frecuencia fundamental está fuera del rango de 0.05 a 10 Hz."
     
     # Estadísticas globales
     estadisticas_globales = {
@@ -189,11 +183,10 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, n_cocientes=5
         'cocientes_yz': [Cociente_yz, Cociente_yz2],
         'frecuencia_fundamental': frecuencia_fundamental,
         'periodo_fundamental': periodo_fundamental,
-        'estadisticas_globales': estadisticas_globales,
-        'nota_frecuencia': nota_frecuencia
+        'estadisticas_globales': estadisticas_globales
     }
 
-# Funciones de visualización (con cambios)
+# Funciones de visualización (sin cambios)
 def graficar_canales_individuales(x, y, z, fs, st):
     """Grafica cada canal de forma individual después del filtrado"""
     fig = make_subplots(rows=3, cols=1, 
@@ -287,14 +280,13 @@ def graficar_hv(resultados_hv, st):
     ))
     
     # Marcar la frecuencia fundamental
-    if resultados_hv['frecuencia_fundamental']:
-        fig.add_trace(go.Scatter(
-            x=[resultados_hv['frecuencia_fundamental']],
-            y=[resultados_hv['hv_suavizado'][np.argmax(resultados_hv['hv_suavizado'])]],
-            mode='markers',
-            name='Frecuencia fundamental',
-            marker=dict(color='green', size=10, symbol='star')
-        ))
+    fig.add_trace(go.Scatter(
+        x=[resultados_hv['frecuencia_fundamental']],
+        y=[resultados_hv['hv_suavizado'][np.argmax(resultados_hv['hv_suavizado'])]],
+        mode='markers',
+        name='Frecuencia fundamental',
+        marker=dict(color='green', size=10, symbol='star')
+    ))
     
     # Configuración del layout
     fig.update_layout(
@@ -336,7 +328,7 @@ def main():
         tab1, tab2 = st.tabs(["Iniciar sesión", "Registrarse"])
         
         with tab1:
-            email = st.text_input("Correo electrónicos")
+            email = st.text_input("Correo electrónico")
             password = st.text_input("Contraseña", type="password")
             if st.button("Iniciar sesión"):
                 user = sign_in(email, password)
@@ -411,48 +403,41 @@ def main():
 
                 # Si el checkbox está marcado, dividir entre 9.81
                 if dividir_por_g:
-                    datos_x = datos_x / 9.81
-                    datos_y = datos_y / 9.81
-                    datos_z = datos_z / 9.81
+                    datos_x, datos_y, datos_z = dividir_entre_gravedad(datos_x, datos_y, datos_z)
                     
                     # Crear DataFrame para mostrar comparación de datos
                     df_dividido = df.copy()
-                    df_dividido['x'] = df['x'] / 9.81
-                    df_dividido['y'] = df['y'] / 9.81
-                    df_dividido['z'] = df['z'] / 9.81
+                    df_dividido['x'] = datos_x
+                    df_dividido['y'] = datos_y
+                    df_dividido['z'] = datos_z
                     
                     # Mostrar las primeras 10 filas comparando los datos originales y los divididos
                     st.subheader("Comparación de datos originales y divididos entre 9.81")
-                    df_comparacion = df.head(10).copy()
-                    df_comparacion['x_dividido'] = df_dividido['x'].head(10)
-                    df_comparacion['y_dividido'] = df_dividido['y'].head(10)
-                    df_comparacion['z_dividido'] = df_dividido['z'].head(10)
+                    df_comparacion = pd.concat([df.head(10), df_dividido.head(10)], axis=1)
+                    df_comparacion.columns = ['x_original', 'y_original', 'z_original', 'x_dividido', 'y_dividido', 'z_dividido']
                     st.write(df_comparacion)
-                
-                # Corrección de línea base y filtrado
-                x_proc = aplicar_filtro_pasabanda(corregir_linea_base(datos_x), fs)
-                y_proc = aplicar_filtro_pasabanda(corregir_linea_base(datos_y), fs)
-                z_proc = aplicar_filtro_pasabanda(corregir_linea_base(datos_z), fs)
-                
-                # Mostrar canales filtrados
-                st.subheader("Canales filtrados (0.05-10 Hz)")
-                fig_canales = graficar_canales_individuales(x_proc, y_proc, z_proc, fs, st)
-                st.plotly_chart(fig_canales)
                 
                 # Realizar análisis H/V
                 resultados_hv = analisis_hv(
-                    x_proc, y_proc, z_proc,
+                    datos_x, datos_y, datos_z,
                     fs=fs,
                     num_ventanas=num_ventanas,
                     tamano_ventana=tamano_ventana
                 )
                 
+                # Mostrar canales filtrados
+                st.subheader("Canales filtrados (0.05-10 Hz)")
+                fig_canales = graficar_canales_individuales(
+                    datos_x, datos_y, datos_z, fs, st
+                )
+                st.plotly_chart(fig_canales)
+                
                 # Mostrar ejemplo de ventana seleccionada
                 st.subheader("Ejemplo de ventana seleccionada")
-                nini = random.randint(0, len(x_proc) - tamano_ventana)
-                x1 = x_proc[nini:nini+tamano_ventana]
-                y1 = y_proc[nini:nini+tamano_ventana]
-                z1 = z_proc[nini:nini+tamano_ventana]
+                nini = random.randint(0, len(datos_x) - tamano_ventana)
+                x1 = datos_x[nini:nini+tamano_ventana]
+                y1 = datos_y[nini:nini+tamano_ventana]
+                z1 = datos_z[nini:nini+tamano_ventana]
                 
                 fig_ventana = graficar_ventana(x1, y1, z1, fs, nini, st)
                 st.plotly_chart(fig_ventana)
@@ -466,8 +451,6 @@ def main():
                 st.subheader("Estadísticas del análisis H/V")
                 st.write(f"Frecuencia fundamental: {resultados_hv['frecuencia_fundamental']:.2f} Hz")
                 st.write(f"Periodo fundamental: {resultados_hv['periodo_fundamental']:.2f} s")
-                if resultados_hv['nota_frecuencia']:
-                    st.warning(resultados_hv['nota_frecuencia'])
 
                 st.write("Estadísticas globales de los cocientes de amplitud:")
                 st.write(f"Promedio x/z: {resultados_hv['estadisticas_globales']['promedio_xz']:.4f}")
@@ -488,6 +471,7 @@ def main():
                 for i in range(1, len(resultados_hv['cocientes_xz'])):
                     st.write(f"Cociente {i+1} x/z: {np.mean(resultados_hv['cocientes_xz'][i]):.4f}")
                     st.write(f"Cociente {i+1} y/z: {np.mean(resultados_hv['cocientes_yz'][i]):.4f}")
+
 
     st.sidebar.header("Instrucciones")
     st.sidebar.markdown("""
