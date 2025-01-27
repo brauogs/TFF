@@ -186,19 +186,26 @@ def analisis_hv(x, y, z, fs, num_ventanas=20, tamano_ventana=2000):
         'estadisticas_globales': estadisticas_globales
     }
 
-# Funciones de visualización (sin cambios)
-def graficar_canales_individuales(x, y, z, fs, st):
+# Funciones de visualización (con cambios)
+def graficar_canales_individuales(x, y, z, fs, st, device_type='accelerometer'):
     """Grafica cada canal de forma individual después del filtrado"""
     fig = make_subplots(rows=3, cols=1, 
                         subplot_titles=('Canal X', 'Canal Y', 'Canal Z'))
     
     tiempo = np.arange(len(x)) / fs
     
-    fig.add_trace(go.Scatter(x=tiempo, y=x, name='X'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=tiempo, y=y, name='Y'), row=2, col=1)
-    fig.add_trace(go.Scatter(x=tiempo, y=z, name='Z'), row=3, col=1)
+    # Set line width based on device type
+    line_width = 1 if device_type == 'accelerometer' else 3
     
-    fig.update_layout(height=800, showlegend=True, title_text="Canales filtrados (0.05-10 Hz)")
+    fig.add_trace(go.Scatter(x=tiempo, y=x, name='X', line=dict(width=line_width)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=tiempo, y=y, name='Y', line=dict(width=line_width)), row=2, col=1)
+    fig.add_trace(go.Scatter(x=tiempo, y=z, name='Z', line=dict(width=line_width)), row=3, col=1)
+    
+    fig.update_layout(
+        height=800, 
+        showlegend=True, 
+        title_text=f"Canales filtrados (0.05-10 Hz) - {device_type.title()}"
+    )
     
     # Add download button for graph image
     img_bytes = fig.to_image(format="png")
@@ -394,6 +401,12 @@ def main():
             num_ventanas = st.sidebar.number_input("Número de ventanas para análisis H/V", min_value=1, max_value=100, value=20)
             tamano_ventana = st.sidebar.number_input("Tamaño de ventana (puntos)", min_value=100, max_value=10000, value=2000)
             dividir_por_g = st.sidebar.checkbox("Dividir datos por 9.81 (gravedad)", value=False)
+            
+            device_type = st.sidebar.selectbox(
+                "Tipo de dispositivo",
+                ["accelerometer", "mobile"],
+                format_func=lambda x: "Acelerómetro" if x == "accelerometer" else "Dispositivo móvil"
+            )
 
             if st.button("Analizar datos"):
                 # Obtener y procesar datos
@@ -428,7 +441,7 @@ def main():
                 # Mostrar canales filtrados
                 st.subheader("Canales filtrados (0.05-10 Hz)")
                 fig_canales = graficar_canales_individuales(
-                    datos_x, datos_y, datos_z, fs, st
+                    datos_x, datos_y, datos_z, fs, st, device_type
                 )
                 st.plotly_chart(fig_canales)
                 
@@ -450,6 +463,13 @@ def main():
                 # Mostrar estadísticas
                 st.subheader("Estadísticas del análisis H/V")
                 st.write(f"Frecuencia fundamental: {resultados_hv['frecuencia_fundamental']:.2f} Hz")
+                
+                # Add fundamental frequency validation
+                if abs(resultados_hv['frecuencia_fundamental'] - 1.16) <= 0.05:
+                    st.success("La frecuencia fundamental calculada coincide con el valor esperado de 1.16 Hz")
+                else:
+                    st.info(f"La frecuencia fundamental calculada ({resultados_hv['frecuencia_fundamental']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
+                
                 st.write(f"Periodo fundamental: {resultados_hv['periodo_fundamental']:.2f} s")
 
                 st.write("Estadísticas globales de los cocientes de amplitud:")
@@ -482,6 +502,7 @@ def main():
        - Frecuencia de muestreo
        - Número de ventanas para análisis H/V
        - Tamaño de ventana
+       - Tipo de dispositivo
     5. Haga clic en 'Analizar datos' para ver:
        - Canales filtrados individualmente
        - Ventana seleccionada aleatoriamente
