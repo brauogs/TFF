@@ -11,3 +11,4 @@ flask
 streamlit-autorefresh
 xlsxwriter
 kaleido
+utils
