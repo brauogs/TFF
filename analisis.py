@@ -187,12 +187,19 @@ def graficar_canales_individuales(x, y, z, fs, st, device_type='accelerometer'):
     return fig
 
 def graficar_hv(resultados_hv, st):
+    if resultados_hv is None:
+        st.error("No se pudieron obtener los resultados del análisis H/V.")
+        return None
+
     fig = go.Figure()
+    
+    # Limit x-axis to 1.5 Hz
+    mask = resultados_hv['frecuencias'] <= 1.5
     
     # Gráfico para x/z
     fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'],
-        y=resultados_hv['hv_suavizado_xz'],
+        x=resultados_hv['frecuencias'][mask],
+        y=resultados_hv['hv_suavizado_xz'][mask],
         mode='lines',
         name='H/V (X/Z)',
         line=dict(color='blue', width=2)
@@ -200,8 +207,8 @@ def graficar_hv(resultados_hv, st):
     
     # Gráfico para y/z
     fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'],
-        y=resultados_hv['hv_suavizado_yz'],
+        x=resultados_hv['frecuencias'][mask],
+        y=resultados_hv['hv_suavizado_yz'][mask],
         mode='lines',
         name='H/V (Y/Z)',
         line=dict(color='red', width=2)
@@ -209,50 +216,52 @@ def graficar_hv(resultados_hv, st):
     
     # Líneas de desviación estándar
     fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'],
-        y=resultados_hv['hv_mas_std_xz'],
+        x=resultados_hv['frecuencias'][mask],
+        y=resultados_hv['hv_mas_std_xz'][mask],
         mode='lines',
         name='m+s (X/Z)',
         line=dict(color='gray', width=1, dash='dash')
     ))
     fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'],
-        y=resultados_hv['hv_menos_std_xz'],
+        x=resultados_hv['frecuencias'][mask],
+        y=resultados_hv['hv_menos_std_xz'][mask],
         mode='lines',
         name='m-s (X/Z)',
         line=dict(color='gray', width=1, dash='dash')
     ))
     
     fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'],
-        y=resultados_hv['hv_mas_std_yz'],
+        x=resultados_hv['frecuencias'][mask],
+        y=resultados_hv['hv_mas_std_yz'][mask],
         mode='lines',
         name='m+s (Y/Z)',
         line=dict(color='lightgray', width=1, dash='dash')
     ))
     fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'],
-        y=resultados_hv['hv_menos_std_yz'],
+        x=resultados_hv['frecuencias'][mask],
+        y=resultados_hv['hv_menos_std_yz'][mask],
         mode='lines',
         name='m-s (Y/Z)',
         line=dict(color='lightgray', width=1, dash='dash')
     ))
     
     # Marcadores para las frecuencias fundamentales
-    fig.add_trace(go.Scatter(
-        x=[resultados_hv['frecuencia_fundamental_xz']],
-        y=[resultados_hv['hv_suavizado_xz'][np.argmax(resultados_hv['hv_suavizado_xz'])]],
-        mode='markers',
-        name='Frecuencia fundamental (X/Z)',
-        marker=dict(color='green', size=10, symbol='star')
-    ))
-    fig.add_trace(go.Scatter(
-        x=[resultados_hv['frecuencia_fundamental_yz']],
-        y=[resultados_hv['hv_suavizado_yz'][np.argmax(resultados_hv['hv_suavizado_yz'])]],
-        mode='markers',
-        name='Frecuencia fundamental (Y/Z)',
-        marker=dict(color='orange', size=10, symbol='star')
-    ))
+    if resultados_hv['frecuencia_fundamental_xz'] <= 1.5:
+        fig.add_trace(go.Scatter(
+            x=[resultados_hv['frecuencia_fundamental_xz']],
+            y=[resultados_hv['hv_suavizado_xz'][np.argmax(resultados_hv['hv_suavizado_xz'][mask])]],
+            mode='markers',
+            name='Frecuencia fundamental (X/Z)',
+            marker=dict(color='green', size=10, symbol='star')
+        ))
+    if resultados_hv['frecuencia_fundamental_yz'] <= 1.5:
+        fig.add_trace(go.Scatter(
+            x=[resultados_hv['frecuencia_fundamental_yz']],
+            y=[resultados_hv['hv_suavizado_yz'][np.argmax(resultados_hv['hv_suavizado_yz'][mask])]],
+            mode='markers',
+            name='Frecuencia fundamental (Y/Z)',
+            marker=dict(color='orange', size=10, symbol='star')
+        ))
     
     # Configuración del gráfico
     fig.update_layout(
@@ -261,6 +270,7 @@ def graficar_hv(resultados_hv, st):
         yaxis_title="H/V",
         xaxis_type="log",
         yaxis_type="log",
+        xaxis_range=[np.log10(0.05), np.log10(1.5)],  # Limit x-axis from 0.05 to 1.5 Hz
         plot_bgcolor='white',
         width=800,
         height=500
@@ -364,27 +374,29 @@ def main():
                     df_comparacion.columns = ['x_original', 'y_original', 'z_original', 'x_dividido', 'y_dividido', 'z_dividido']
                     st.write(df_comparacion)
                 
-                resultados_hv = analisis_hv_mejorado(
-                    datos_x, datos_y, datos_z,
-                    fs=fs,
-                    num_ventanas=num_ventanas,
-                    tamano_ventana=tamano_ventana,
-                    suavizado=suavizar_hv
-                )
-                
-                st.subheader("Canales filtrados (0.05-10 Hz)")
-                fig_canales = graficar_canales_individuales(
-                    datos_x, datos_y, datos_z, fs, st, device_type
-                )
-                st.plotly_chart(fig_canales)
-                
-                st.subheader("Análisis H/V")
-                fig_hv = graficar_hv(resultados_hv, st)
-                st.plotly_chart(fig_hv)
-                
-                st.subheader("Estadísticas del análisis H/V")
-                st.write(f"Frecuencia fundamental (X/Z): {resultados_hv['frecuencia_fundamental_xz']:.2f} Hz")
-                st.write(f"Frecuencia fundamental (Y/Z): {resultados_hv['frecuencia_fundamental_yz']:.2f} Hz")
+                    resultados_hv = analisis_hv_mejorado(
+                            datos_x, datos_y, datos_z,
+                            fs=fs,
+                            num_ventanas=num_ventanas,
+                            tamano_ventana=tamano_ventana,
+                            suavizado=suavizar_hv
+                        )
+                        
+                    if resultados_hv is not None:
+                        st.subheader("Canales filtrados (0.05-1.5 Hz)")
+                        fig_canales = graficar_canales_individuales(
+                            datos_x, datos_y, datos_z, fs, st, device_type
+                        )
+                        st.plotly_chart(fig_canales)
+
+                        st.subheader("Análisis H/V")
+                        fig_hv = graficar_hv(resultados_hv, st)
+                        if fig_hv is not None:
+                            st.plotly_chart(fig_hv)
+                            
+                        st.subheader("Estadísticas del análisis H/V")
+                        st.write(f"Frecuencia fundamental (X/Z): {resultados_hv['frecuencia_fundamental_xz']:.2f} Hz")
+                        st.write(f"Frecuencia fundamental (Y/Z): {resultados_hv['frecuencia_fundamental_yz']:.2f} Hz")
 
                 if abs(resultados_hv['frecuencia_fundamental_xz'] - 1.16) <= 0.05:
                     st.success("La frecuencia fundamental (X/Z) coincide con el valor esperado de 1.16 Hz")
