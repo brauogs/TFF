@@ -179,17 +179,17 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000,
             'frecuencias': frecuencias,
             'hv_xz': cociente_xz,
             'hv_yz': cociente_yz,
-            'hv_suavizado_xz': hv_suavizado_xz,
-            'hv_suavizado_yz': hv_suavizado_yz,
+            #'hv_suavizado_xz': hv_suavizado_xz,
+            #'hv_suavizado_yz': hv_suavizado_yz,
             'std_xz': std_xz,
             'std_yz': std_yz,
-            'frecuencia_fundamental_xz': frecuencia_fundamental_xz,
-            'frecuencia_fundamental_yz': frecuencia_fundamental_yz,
-            'periodo_fundamental_xz': 1/frecuencia_fundamental_xz if frecuencia_fundamental_xz > 0 else 0,
-            'periodo_fundamental_yz': 1/frecuencia_fundamental_yz if frecuencia_fundamental_yz > 0 else 0,
-            'calidad_xz': calidad_xz,
-            'calidad_yz': calidad_yz,
-            'mask_rango_valido': mask
+            #'frecuencia_fundamental_xz': frecuencia_fundamental_xz,
+            #'frecuencia_fundamental_yz': frecuencia_fundamental_yz,
+            #'periodo_fundamental_xz': 1/frecuencia_fundamental_xz if frecuencia_fundamental_xz > 0 else 0,
+            #'periodo_fundamental_yz': 1/frecuencia_fundamental_yz if frecuencia_fundamental_yz > 0 else 0,
+            #'calidad_xz': calidad_xz,
+            #'calidad_yz': calidad_yz,
+            #'mask_rango_valido': mask
         }
     except Exception as e:
         st.error(f"Error en el análisis H/V: {str(e)}")
