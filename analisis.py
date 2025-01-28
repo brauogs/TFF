@@ -14,12 +14,12 @@ import random
 
 st.set_page_config(page_title="Análisis del Acelerograma", layout="wide")
 
-# Firebase setup
+# Configuración de Firebase
 if not firebase_admin._apps:
     cred = credentials.Certificate(st.secrets["firebase"])
     firebase_admin.initialize_app(cred, {'storageBucket': "vibraciones-aac24.appspot.com"})
 
-def sign_up(email, password):
+def registrar(email, password):
     try:
         user = auth.create_user(email=email, password=password)
         return user
@@ -27,7 +27,7 @@ def sign_up(email, password):
         st.error(f"Error durante el registro: {str(e)}")
         return None
 
-def sign_in(email, password):
+def iniciar_sesion(email, password):
     try:
         user = auth.get_user_by_email(email)
         return user
@@ -35,7 +35,7 @@ def sign_in(email, password):
         st.error(f"Error durante el inicio de sesión: {str(e)}")
         return None
 
-def upload_file(file, user_id):
+def subir_archivo(file, user_id):
     try:
         bucket = storage.bucket()
         blob = bucket.blob(f"users/{user_id}/{file.name}")
@@ -45,7 +45,7 @@ def upload_file(file, user_id):
         st.error(f"Error al subir el archivo: {str(e)}")
         return None
 
-def get_user_files(user_id):
+def obtener_archivos_usuario(user_id):
     try:
         bucket = storage.bucket()
         blobs = bucket.list_blobs(prefix=f"users/{user_id}/")
@@ -54,7 +54,7 @@ def get_user_files(user_id):
         st.error(f"Error al obtener los archivos del usuario: {str(e)}")
         return []
 
-def download_file(user_id, file_name):
+def descargar_archivo(user_id, file_name):
     try:
         bucket = storage.bucket()
         blob = bucket.blob(f"users/{user_id}/{file_name}")
@@ -63,10 +63,9 @@ def download_file(user_id, file_name):
         st.error(f"Error al descargar el archivo: {str(e)}")
         return None
 
-# Signal processing functions
+# Funciones de procesamiento de señales
 def corregir_linea_base(datos):
     return datos - np.mean(datos)
-
 
 def aplicar_filtro_pasabanda(datos, fs, fmin=0.05, fmax=10):
     nyq = 0.5 * fs
@@ -206,7 +205,7 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000,
         st.error(f"Error en el análisis H/V: {str(e)}")
         return None
 
-# Visualization functions
+# Funciones de visualización
 def graficar_canales_individuales(x, y, z, fs, st, device_type='accelerometer'):
     fig = make_subplots(rows=3, cols=1, subplot_titles=('Canal X', 'Canal Y', 'Canal Z'))
     
@@ -224,6 +223,10 @@ def graficar_canales_individuales(x, y, z, fs, st, device_type='accelerometer'):
     return fig
 
 def graficar_hv(resultados_hv, st):
+    if resultados_hv is None:
+        st.error("No se pudieron obtener los resultados del análisis H/V.")
+        return None
+
     fig = go.Figure()
     
     # Gráfico para x/z
@@ -247,29 +250,30 @@ def graficar_hv(resultados_hv, st):
     # Líneas de desviación estándar
     fig.add_trace(go.Scatter(
         x=resultados_hv['frecuencias'],
-        y=resultados_hv['hv_mas_std_xz'],
+        y=resultados_hv['hv_suavizado_xz'] + resultados_hv['std_xz'],
         mode='lines',
         name='m+s (X/Z)',
         line=dict(color='gray', width=1, dash='dash')
     ))
     fig.add_trace(go.Scatter(
         x=resultados_hv['frecuencias'],
-        y=resultados_hv['hv_menos_std_xz'],
+        y=resultados_hv['hv_suavizado_xz'] - resultados_hv['std_xz'],
         mode='lines',
         name='m-s (X/Z)',
         line=dict(color='gray', width=1, dash='dash')
     ))
     
+    
+    fig.add_trace(go.Scatter(
+            x=resultados_hv['frecuencias'],
+            y=resultados_hv['hv_suavizado_yz'] + resultados_hv['std_yz'],
+            mode='lines',
+            name='m+s (Y/Z)',
+            line=dict(color='lightgray', width=1, dash='dash')
+        ))
     fig.add_trace(go.Scatter(
         x=resultados_hv['frecuencias'],
-        y=resultados_hv['hv_mas_std_yz'],
-        mode='lines',
-        name='m+s (Y/Z)',
-        line=dict(color='lightgray', width=1, dash='dash')
-    ))
-    fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'],
-        y=resultados_hv['hv_menos_std_yz'],
+        y=resultados_hv['hv_suavizado_yz'] - resultados_hv['std_yz'],
         mode='lines',
         name='m-s (Y/Z)',
         line=dict(color='lightgray', width=1, dash='dash')
@@ -298,6 +302,7 @@ def graficar_hv(resultados_hv, st):
         yaxis_title="H/V",
         xaxis_type="log",
         yaxis_type="log",
+        xaxis_range=[np.log10(0.05), np.log10(1.5)],  # Limitar eje x de 0.05 a 1.5 Hz
         plot_bgcolor='white',
         width=800,
         height=500
@@ -310,7 +315,6 @@ def graficar_hv(resultados_hv, st):
     st.download_button(label="Descargar gráfica como imagen", data=img_bytes, file_name="grafica_hv.png", mime="image/png")
     return fig
 
-# Main function
 def main():
     st.title("Análisis del Acelerograma")
     st.sidebar.image("logoUAMSis.png", use_container_width=True)
@@ -325,7 +329,7 @@ def main():
             email = st.text_input("Correo electrónico")
             password = st.text_input("Contraseña", type="password")
             if st.button("Iniciar sesión"):
-                user = sign_in(email, password)
+                user = iniciar_sesion(email, password)
                 if user:
                     st.session_state.user = user
                     st.success("¡Sesión iniciada con éxito!")
@@ -335,7 +339,7 @@ def main():
             new_email = st.text_input("Nuevo correo electrónico")
             new_password = st.text_input("Nueva contraseña", type="password")
             if st.button("Registrarse"):
-                user = sign_up(new_email, new_password)
+                user = registrar(new_email, new_password)
                 if user:
                     st.session_state.user = user
                     st.success("¡Registrado con éxito!")
@@ -349,17 +353,22 @@ def main():
 
         uploaded_file = st.file_uploader("Sube un archivo CSV o TXT", type=["csv", "txt"])
         if uploaded_file:
-            file_url = upload_file(uploaded_file, st.session_state.user.uid)
+            file_url = subir_archivo(uploaded_file, st.session_state.user.uid)
             if file_url:
                 st.success("¡Archivo subido exitosamente!")
 
-        user_files = get_user_files(st.session_state.user.uid)
+        user_files = obtener_archivos_usuario(st.session_state.user.uid)
         selected_file = st.selectbox("Seleccione un archivo para analizar", user_files)
 
         if selected_file:
-            file_content = download_file(st.session_state.user.uid, selected_file)
+            file_content = descargar_archivo(st.session_state.user.uid, selected_file)
             if file_content:
-                st.download_button(label="Descargar archivo seleccionado", data=file_content, file_name=selected_file, mime="text/csv")
+                st.download_button(
+                    label="Descargar archivo seleccionado",
+                    data=file_content,
+                    file_name=selected_file,
+                    mime="text/csv"
+                )
             
             df = pd.read_csv(io.BytesIO(file_content))
             st.write("Visualizar datos:")
@@ -401,38 +410,42 @@ def main():
                     df_comparacion.columns = ['x_original', 'y_original', 'z_original', 'x_dividido', 'y_dividido', 'z_dividido']
                     st.write(df_comparacion)
                 
-                    resultados_hv = analisis_hv_mejorado(
-                        datos_x, datos_y, datos_z,
-                        fs=fs,
-                        num_ventanas=num_ventanas,
-                        tamano_ventana=tamano_ventana,
-                        suavizado=suavizar_hv,
-                        device_type=device_type  # <- Añadir parámetro
-)
-                
-                st.subheader("Canales filtrados (0.05-10 Hz)")
-                fig_canales = graficar_canales_individuales(
-                    datos_x, datos_y, datos_z, fs, st, device_type
+                resultados_hv = analisis_hv_mejorado(
+                    datos_x, datos_y, datos_z,
+                    fs=fs,
+                    num_ventanas=num_ventanas,
+                    tamano_ventana=tamano_ventana,
+                    suavizado=suavizar_hv,
+                    device_type=device_type
                 )
-                st.plotly_chart(fig_canales)
                 
-                st.subheader("Análisis H/V")
-                fig_hv = graficar_hv(resultados_hv, st)
-                st.plotly_chart(fig_hv)
-                
-                st.subheader("Estadísticas del análisis H/V")
-                st.write(f"Frecuencia fundamental (X/Z): {resultados_hv['frecuencia_fundamental_xz']:.2f} Hz")
-                st.write(f"Frecuencia fundamental (Y/Z): {resultados_hv['frecuencia_fundamental_yz']:.2f} Hz")
+                if resultados_hv is not None:
+                    st.subheader("Canales filtrados (0.05-1.5 Hz)")
+                    fig_canales = graficar_canales_individuales(
+                        datos_x, datos_y, datos_z, fs, st, device_type
+                    )
+                    st.plotly_chart(fig_canales)
+                    
+                    st.subheader("Análisis H/V")
+                    fig_hv = graficar_hv(resultados_hv, st)
+                    if fig_hv is not None:
+                        st.plotly_chart(fig_hv)
+                    
+                    st.subheader("Estadísticas del análisis H/V")
+                    st.write(f"Frecuencia fundamental (X/Z): {resultados_hv['frecuencia_fundamental_xz']:.2f} Hz")
+                    st.write(f"Frecuencia fundamental (Y/Z): {resultados_hv['frecuencia_fundamental_yz']:.2f} Hz")
 
-                if abs(resultados_hv['frecuencia_fundamental_xz'] - 1.16) <= 0.05:
-                    st.success("La frecuencia fundamental (X/Z) coincide con el valor esperado de 1.16 Hz")
-                else:
-                    st.info(f"La frecuencia fundamental (X/Z) calculada ({resultados_hv['frecuencia_fundamental_xz']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
+                    if abs(resultados_hv['frecuencia_fundamental_xz'] - 1.16) <= 0.05:
+                        st.success("La frecuencia fundamental (X/Z) coincide con el valor esperado de 1.16 Hz")
+                    else:
+                        st.info(f"La frecuencia fundamental (X/Z) calculada ({resultados_hv['frecuencia_fundamental_xz']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
 
-                if abs(resultados_hv['frecuencia_fundamental_yz'] - 1.16) <= 0.05:
-                    st.success("La frecuencia fundamental (Y/Z) coincide con el valor esperado de 1.16 Hz")
+                    if abs(resultados_hv['frecuencia_fundamental_yz'] - 1.16) <= 0.05:
+                        st.success("La frecuencia fundamental (Y/Z) coincide con el valor esperado de 1.16 Hz")
+                    else:
+                        st.info(f"La frecuencia fundamental (Y/Z) calculada ({resultados_hv['frecuencia_fundamental_yz']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
                 else:
-                    st.info(f"La frecuencia fundamental (Y/Z) calculada ({resultados_hv['frecuencia_fundamental_yz']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
+                    st.error("No se pudo realizar el análisis H/V. Por favor, revise los datos de entrada y los parámetros.")
 
     st.sidebar.header("Instrucciones")
     st.sidebar.markdown("""
@@ -449,8 +462,8 @@ def main():
        - Canales filtrados individualmente
        - Análisis H/V
        - Estadísticas del análisis
+    6. Descargue los resultados si lo desea.
     """)
 
 if __name__ == "__main__":
     main()
-
