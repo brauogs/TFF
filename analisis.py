@@ -371,13 +371,18 @@ def main():
                 st.plotly_chart(fig_hv)
                 
                 st.subheader("Estadísticas del análisis H/V")
-                st.write(f"Frecuencia fundamental: {resultados_hv['frecuencia_fundamental']:.2f} Hz")
-                st.write(f"Periodo fundamental: {resultados_hv['periodo_fundamental']:.2f} s")
+                st.write(f"Frecuencia fundamental (X/Z): {resultados_hv['frecuencia_fundamental_xz']:.2f} Hz")
+                st.write(f"Frecuencia fundamental (Y/Z): {resultados_hv['frecuencia_fundamental_yz']:.2f} Hz")
 
-                if abs(resultados_hv['frecuencia_fundamental'] - 1.16) <= 0.05:
-                    st.success("La frecuencia fundamental calculada coincide con el valor esperado de 1.16 Hz")
+                if abs(resultados_hv['frecuencia_fundamental_xz'] - 1.16) <= 0.05:
+                    st.success("La frecuencia fundamental (X/Z) coincide con el valor esperado de 1.16 Hz")
                 else:
-                    st.info(f"La frecuencia fundamental calculada ({resultados_hv['frecuencia_fundamental']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
+                    st.info(f"La frecuencia fundamental (X/Z) calculada ({resultados_hv['frecuencia_fundamental_xz']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
+
+                if abs(resultados_hv['frecuencia_fundamental_yz'] - 1.16) <= 0.05:
+                    st.success("La frecuencia fundamental (Y/Z) coincide con el valor esperado de 1.16 Hz")
+                else:
+                    st.info(f"La frecuencia fundamental (Y/Z) calculada ({resultados_hv['frecuencia_fundamental_yz']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
 
     st.sidebar.header("Instrucciones")
     st.sidebar.markdown("""
