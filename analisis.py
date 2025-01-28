@@ -139,7 +139,7 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000,
             y1 = y[nini:nini+tamano_ventana]
             z1 = z[nini:nini+tamano_ventana]
 
-            # La amplitud se calcula con la transformada de Fourier.
+            # La amplitud se calcula con la transformada de Fourier. 
             frecuencias, fx = calcular_espectro_fourier(x1, fs)
             _, fy = calcular_espectro_fourier(y1, fs)
             _, fz = calcular_espectro_fourier(z1, fs)
@@ -159,10 +159,10 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000,
             
             # Acumular cocientes
             with np.errstate(divide='ignore', invalid='ignore'):
-                cociente_xz += np.nan_to_num(fx_suavizado / fz_suavizado, nan=0.0, posinf=0.0, neginf=0.0) / num_ventanas
-                cociente_yz += np.nan_to_num(fy_suavizado / fz_suavizado, nan=0.0, posinf=0.0, neginf=0.0) / num_ventanas
-                cociente_xz2 += np.nan_to_num((fx_suavizado / fz_suavizado)**2, nan=0.0, posinf=0.0, neginf=0.0) / num_ventanas
-                cociente_yz2 += np.nan_to_num((fy_suavizado / fz_suavizado)**2, nan=0.0, posinf=0.0, neginf=0.0) / num_ventanas
+                cociente_xz += fx_suavizado / fz_suavizado/ num_ventanas
+                cociente_xy += fy_suavizado / fz_suavizado/ num_ventanas
+                cociente_xz2 += ((fx_suavizado / fz_suavizado)**2) / num_ventanas
+                cociente_yz2 += ((fy_suavizado / fz_suavizado)**2/ num_ventanas
 
         # 5. Calcular estadísticas
         var_xz = cociente_xz2 - cociente_xz**2
