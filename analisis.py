@@ -67,7 +67,7 @@ def download_file(user_id, file_name):
 def corregir_linea_base(datos):
     return datos - np.mean(datos)
 
-def aplicar_filtro_pasabanda(datos, fs, fmin=0.05, fmax=10):
+def aplicar_filtro_pasabanda(datos, fs, fmin=0.05, fmax=1.5):
     nyq = 0.5 * fs
     b, a = signal.butter(4, [fmin/nyq, fmax/nyq], btype='band')
     return signal.filtfilt(b, a, datos)
@@ -272,7 +272,7 @@ def graficar_hv(resultados_hv, st):
     img_bytes = fig.to_image(format="png")
     st.download_button(label="Descargar gráfica como imagen", data=img_bytes, file_name="grafica_hv.png", mime="image/png")
     return fig
-
+    
 # Main function
 def main():
     st.title("Análisis del Acelerograma")
