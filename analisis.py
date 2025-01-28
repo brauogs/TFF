@@ -107,20 +107,25 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, suav
             _, fy = calcular_espectro_fourier(y1, fs)
             _, fz = calcular_espectro_fourier(z1, fs)
             
-            # 6. Acumular los cocientes y sus cuadrados
-            cociente_xz += fx / fz / num_ventanas
-            cociente_yz += fy / fz / num_ventanas
-            cociente_xz2 += (fx / fz) ** 2 / num_ventanas
-            cociente_yz2 += (fy / fz) ** 2 / num_ventanas
+            # 6. Evitar división por cero
+            fz[fz == 0] = np.finfo(float).eps  # Reemplazar ceros con un valor pequeño
+            fx_div_fz = fx / fz
+            fy_div_fz = fy / fz
+            
+            # 7. Acumular los cocientes y sus cuadrados
+            cociente_xz += fx_div_fz / num_ventanas
+            cociente_yz += fy_div_fz / num_ventanas
+            cociente_xz2 += (fx_div_fz ** 2) / num_ventanas
+            cociente_yz2 += (fy_div_fz ** 2) / num_ventanas
         
-        # 7. Calcular la varianza y la desviación estándar
+        # 8. Calcular la varianza y la desviación estándar
         var_xz = cociente_xz2 - cociente_xz**2
         std_xz = np.sqrt(var_xz)
         
         var_yz = cociente_yz2 - cociente_yz**2
         std_yz = np.sqrt(var_yz)
         
-        # 8. Suavizar los resultados si es necesario
+        # 9. Suavizar los resultados si es necesario
         if suavizado:
             hv_suavizado_xz = signal.savgol_filter(cociente_xz, window_length=11, polyorder=3)
             hv_suavizado_yz = signal.savgol_filter(cociente_yz, window_length=11, polyorder=3)
@@ -128,7 +133,7 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, suav
             hv_suavizado_xz = cociente_xz
             hv_suavizado_yz = cociente_yz
         
-        # 9. Encontrar la frecuencia fundamental
+        # 10. Encontrar la frecuencia fundamental
         indice_max_xz = np.argmax(hv_suavizado_xz)
         frecuencia_fundamental_xz = frecuencias[indice_max_xz]
         periodo_fundamental_xz = 1 / frecuencia_fundamental_xz
@@ -137,7 +142,7 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, suav
         frecuencia_fundamental_yz = frecuencias[indice_max_yz]
         periodo_fundamental_yz = 1 / frecuencia_fundamental_yz
         
-        # 10. Retornar los resultados
+        # 11. Retornar los resultados
         return {
             'frecuencias': frecuencias,
             'hv_xz': cociente_xz,
