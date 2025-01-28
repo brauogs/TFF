@@ -67,6 +67,7 @@ def download_file(user_id, file_name):
 def corregir_linea_base(datos):
     return datos - np.mean(datos)
 
+
 def aplicar_filtro_pasabanda(datos, fs, fmin=0.05, fmax=10):
     nyq = 0.5 * fs
     b, a = signal.butter(4, [fmin/nyq, fmax/nyq], btype='band')
@@ -81,77 +82,125 @@ def calcular_espectro_fourier(datos, fs):
 def dividir_entre_gravedad(x, y, z):
     return x / 9.81, y / 9.81, z / 9.81
 
-def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, suavizado=True):
+def preprocesar_movil(datos, fs):
+    """Preprocesamiento adicional para datos de dispositivos móviles"""
     try:
-        # 1. Corregir línea base y aplicar filtro pasa banda
-        x = aplicar_filtro_pasabanda(corregir_linea_base(x), fs)
-        y = aplicar_filtro_pasabanda(corregir_linea_base(y), fs)
-        z = aplicar_filtro_pasabanda(corregir_linea_base(z), fs)
+        # 1. Filtro notch para eliminar interferencia eléctrica (50/60 Hz)
+        notch_freq = 60 if fs > 100 else 50
+        b, a = signal.iirnotch(notch_freq, 30, fs)
+        datos_filtrados = signal.filtfilt(b, a, datos)
         
-        # 2. Inicializar acumuladores para los cocientes
-        cociente_xz = np.zeros(tamano_ventana // 2)
-        cociente_yz = np.zeros(tamano_ventana // 2)
-        cociente_xz2 = np.zeros(tamano_ventana // 2)
-        cociente_yz2 = np.zeros(tamano_ventana // 2)
-        
-        # 3. Repetir el proceso para cada ventana
+        # 2. Filtro pasa-altos adicional para eliminar deriva
+        b_hp, a_hp = signal.butter(2, 0.5/(fs/2), btype='high')
+        return signal.filtfilt(b_hp, a_hp, datos_filtrados)
+    except Exception as e:
+        st.error(f"Error en preprocesamiento móvil: {str(e)}")
+        return datos
+
+def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, 
+                        suavizado=True, device_type='accelerometer'):
+    try:
+        # Ajustar parámetros según tipo de dispositivo
+        if device_type == 'mobile':
+            fmin, fmax = 0.1, 20  # Rango optimizado para móviles
+            rango_busqueda_pico = (0.5, 5)  # Rango de búsqueda de frecuencia fundamental
+        else:
+            fmin, fmax = 0.05, 10  # Rango tradicional para acelerómetros
+            rango_busqueda_pico = (0.1, 10)
+
+        # 1. Preprocesamiento específico para móviles
+        if device_type == 'mobile':
+            x = preprocesar_movil(corregir_linea_base(x), fs)
+            y = preprocesar_movil(corregir_linea_base(y), fs)
+            z = preprocesar_movil(corregir_linea_base(z), fs)
+        else:
+            x = corregir_linea_base(x)
+            y = corregir_linea_base(y)
+            z = corregir_linea_base(z)
+
+        # 2. Aplicar filtro pasa banda con parámetros ajustados
+        x = aplicar_filtro_pasabanda(x, fs, fmin=fmin, fmax=fmax)
+        y = aplicar_filtro_pasabanda(y, fs, fmin=fmin, fmax=fmax)
+        z = aplicar_filtro_pasabanda(z, fs, fmin=fmin, fmax=fmax)
+
+        # 3. Inicializar acumuladores
+        n_fft = tamano_ventana // 2
+        cociente_xz = np.zeros(n_fft)
+        cociente_yz = np.zeros(n_fft)
+        cociente_xz2 = np.zeros(n_fft)
+        cociente_yz2 = np.zeros(n_fft)
+
+        # 4. Procesamiento por ventanas
         for _ in range(num_ventanas):
-            # 4. Seleccionar una ventana aleatoria
-            nini = random.randint(0, len(x) - tamano_ventana)
+            # Seleccionar ventana aleatoria con solapamiento
+            max_start = len(x) - tamano_ventana
+            nini = random.randint(int(0.1*max_start), int(0.9*max_start)) if max_start > 0 else 0
             x1 = x[nini:nini+tamano_ventana]
             y1 = y[nini:nini+tamano_ventana]
             z1 = z[nini:nini+tamano_ventana]
-            
-            # 5. Calcular los espectros de Fourier
-            frecuencias, fx = calcular_espectro_fourier(x1, fs)
-            _, fy = calcular_espectro_fourier(y1, fs)
-            _, fz = calcular_espectro_fourier(z1, fs)
-            
-            # 6. Acumular los cocientes y sus cuadrados
-            cociente_xz += fx / fz / num_ventanas
-            cociente_yz += fy / fz / num_ventanas
-            cociente_xz2 += (fx / fz) ** 2 / num_ventanas
-            cociente_yz2 += (fy / fz) ** 2 / num_ventanas
-        
-        # 7. Calcular la varianza y la desviación estándar
+
+            # Calcular espectros con ventaneo de Hanning
+            frecuencias, fx = calcular_espectro_fourier(x1 * signal.windows.hann(tamano_ventana), fs)
+            _, fy = calcular_espectro_fourier(y1 * signal.windows.hann(tamano_ventana), fs)
+            _, fz = calcular_espectro_fourier(z1 * signal.windows.hann(tamano_ventana), fs)
+
+            # Acumular cocientes
+            with np.errstate(divide='ignore', invalid='ignore'):
+                cociente_xz += np.nan_to_num(fx / fz, nan=0.0, posinf=0.0, neginf=0.0) / num_ventanas
+                cociente_yz += np.nan_to_num(fy / fz, nan=0.0, posinf=0.0, neginf=0.0) / num_ventanas
+                cociente_xz2 += np.nan_to_num((fx / fz)**2, nan=0.0, posinf=0.0, neginf=0.0) / num_ventanas
+                cociente_yz2 += np.nan_to_num((fy / fz)**2, nan=0.0, posinf=0.0, neginf=0.0) / num_ventanas
+
+        # 5. Calcular estadísticas
         var_xz = cociente_xz2 - cociente_xz**2
-        std_xz = np.sqrt(var_xz)
-        
+        std_xz = np.sqrt(np.abs(var_xz))  # Valor absoluto para evitar valores negativos por errores numéricos
+
         var_yz = cociente_yz2 - cociente_yz**2
-        std_yz = np.sqrt(var_yz)
-        
-        # 8. Suavizar los resultados si es necesario
+        std_yz = np.sqrt(np.abs(var_yz))
+
+        # 6. Suavizado adaptativo
         if suavizado:
-            hv_suavizado_xz = signal.savgol_filter(cociente_xz, window_length=11, polyorder=3)
-            hv_suavizado_yz = signal.savgol_filter(cociente_yz, window_length=11, polyorder=3)
+            window_length = 15 if device_type == 'mobile' else 11
+            hv_suavizado_xz = signal.savgol_filter(cociente_xz, window_length=window_length, polyorder=3)
+            hv_suavizado_yz = signal.savgol_filter(cociente_yz, window_length=window_length, polyorder=3)
         else:
             hv_suavizado_xz = cociente_xz
             hv_suavizado_yz = cociente_yz
+
+        # 7. Detección de pico fundamental en rango específico
+        mask = (frecuencias >= rango_busqueda_pico[0]) & (frecuencias <= rango_busqueda_pico[1])
         
-        # 9. Encontrar la frecuencia fundamental
-        indice_max_xz = np.argmax(hv_suavizado_xz)
-        frecuencia_fundamental_xz = frecuencias[indice_max_xz]
-        periodo_fundamental_xz = 1 / frecuencia_fundamental_xz
-        
-        indice_max_yz = np.argmax(hv_suavizado_yz)
-        frecuencia_fundamental_yz = frecuencias[indice_max_yz]
-        periodo_fundamental_yz = 1 / frecuencia_fundamental_yz
-        
-        # 10. Retornar los resultados
+        try:
+            indice_max_xz = np.nanargmax(hv_suavizado_xz[mask]) + np.argmax(mask)
+            frecuencia_fundamental_xz = frecuencias[indice_max_xz]
+        except:
+            frecuencia_fundamental_xz = 0.0
+            
+        try:
+            indice_max_yz = np.nanargmax(hv_suavizado_yz[mask]) + np.argmax(mask)
+            frecuencia_fundamental_yz = frecuencias[indice_max_yz]
+        except:
+            frecuencia_fundamental_yz = 0.0
+
+        # 8. Calcular parámetros de calidad
+        calidad_xz = hv_suavizado_xz[indice_max_xz] / np.median(hv_suavizado_xz[mask])
+        calidad_yz = hv_suavizado_yz[indice_max_yz] / np.median(hv_suavizado_yz[mask])
+
         return {
             'frecuencias': frecuencias,
             'hv_xz': cociente_xz,
             'hv_yz': cociente_yz,
             'hv_suavizado_xz': hv_suavizado_xz,
             'hv_suavizado_yz': hv_suavizado_yz,
-            'hv_mas_std_xz': cociente_xz + std_xz,
-            'hv_menos_std_xz': cociente_xz - std_xz,
-            'hv_mas_std_yz': cociente_yz + std_yz,
-            'hv_menos_std_yz': cociente_yz - std_yz,
+            'std_xz': std_xz,
+            'std_yz': std_yz,
             'frecuencia_fundamental_xz': frecuencia_fundamental_xz,
             'frecuencia_fundamental_yz': frecuencia_fundamental_yz,
-            'periodo_fundamental_xz': periodo_fundamental_xz,
-            'periodo_fundamental_yz': periodo_fundamental_yz
+            'periodo_fundamental_xz': 1/frecuencia_fundamental_xz if frecuencia_fundamental_xz > 0 else 0,
+            'periodo_fundamental_yz': 1/frecuencia_fundamental_yz if frecuencia_fundamental_yz > 0 else 0,
+            'calidad_xz': calidad_xz,
+            'calidad_yz': calidad_yz,
+            'mask_rango_valido': mask
         }
     except Exception as e:
         st.error(f"Error en el análisis H/V: {str(e)}")
@@ -352,13 +401,14 @@ def main():
                     df_comparacion.columns = ['x_original', 'y_original', 'z_original', 'x_dividido', 'y_dividido', 'z_dividido']
                     st.write(df_comparacion)
                 
-                resultados_hv = analisis_hv_mejorado(
-                    datos_x, datos_y, datos_z,
-                    fs=fs,
-                    num_ventanas=num_ventanas,
-                    tamano_ventana=tamano_ventana,
-                    suavizado=suavizar_hv
-                )
+                    resultados_hv = analisis_hv_mejorado(
+                        datos_x, datos_y, datos_z,
+                        fs=fs,
+                        num_ventanas=num_ventanas,
+                        tamano_ventana=tamano_ventana,
+                        suavizado=suavizar_hv,
+                        device_type=device_type  # <- Añadir parámetro
+)
                 
                 st.subheader("Canales filtrados (0.05-10 Hz)")
                 fig_canales = graficar_canales_individuales(
