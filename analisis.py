@@ -67,6 +67,7 @@ def descargar_archivo(user_id, file_name):
 def corregir_linea_base(datos):
     return datos - np.mean(datos)
 
+# Una vez
 def aplicar_filtro_pasabanda(datos, fs, fmin=0.05, fmax=10):
     nyq = 0.5 * fs
     b, a = signal.butter(4, [fmin/nyq, fmax/nyq], btype='band')
@@ -75,7 +76,7 @@ def aplicar_filtro_pasabanda(datos, fs, fmin=0.05, fmax=10):
 def calcular_espectro_fourier(datos, fs):
     n = len(datos)
     frecuencias = fftfreq(n, d=1/fs)[:n//2]
-    amplitudes = np.abs(fft(datos))[:n//2] * 2 / n
+    amplitudes = np.abs(fft(datos))[:n//2]
     return frecuencias, amplitudes
 
 def dividir_entre_gravedad(x, y, z):
@@ -129,7 +130,7 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000,
         cociente_xz2 = np.zeros(n_fft)
         cociente_yz2 = np.zeros(n_fft)
 
-        # 4. Procesamiento por ventanas
+        # 4. Procesamiento por ventanas - 
         for _ in range(num_ventanas):
             # Seleccionar ventana aleatoria con solapamiento
             max_start = len(x) - tamano_ventana
@@ -138,17 +139,30 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000,
             y1 = y[nini:nini+tamano_ventana]
             z1 = z[nini:nini+tamano_ventana]
 
-            # Calcular espectros con ventaneo de Hanning
-            frecuencias, fx = calcular_espectro_fourier(x1 * signal.windows.hann(tamano_ventana), fs)
-            _, fy = calcular_espectro_fourier(y1 * signal.windows.hann(tamano_ventana), fs)
-            _, fz = calcular_espectro_fourier(z1 * signal.windows.hann(tamano_ventana), fs)
+            # La amplitud se calcula con la transformada de Fourier.
+            frecuencias, fx = calcular_espectro_fourier(x1, fs)
+            _, fy = calcular_espectro_fourier(y1, fs)
+            _, fz = calcular_espectro_fourier(z1, fs)
 
+            # En esta parte se suaviza cada parte por cada ciclo.
+            
+            fx_suavizado = np.zeros_like(fx)
+            fy_suavizado = np.zeros_like(fy)
+            fz_suavizado = np.zeros_like(fz)
+            
+            #Aquí ya se suavizó cada parte.
+            window_length = 15 if device_type == 'mobile' else 11 
+            fx_suavizado = signal.savgol_filtrer(fx, windows_length=window_length, polyorder=3)
+            fy_suavizado = signal.savgol_filtrer(fy, windows_length=window_length, polyorder=3)
+            fz_suavizado = signal.savgol_filtrer(fx, windows_length=window_length, polyorder=3)
+            
+            
             # Acumular cocientes
             with np.errstate(divide='ignore', invalid='ignore'):
-                cociente_xz += np.nan_to_num(fx / fz, nan=0.0, posinf=0.0, neginf=0.0) / num_ventanas
-                cociente_yz += np.nan_to_num(fy / fz, nan=0.0, posinf=0.0, neginf=0.0) / num_ventanas
-                cociente_xz2 += np.nan_to_num((fx / fz)**2, nan=0.0, posinf=0.0, neginf=0.0) / num_ventanas
-                cociente_yz2 += np.nan_to_num((fy / fz)**2, nan=0.0, posinf=0.0, neginf=0.0) / num_ventanas
+                cociente_xz += np.nan_to_num(fx_suavizado / fz_suavizado, nan=0.0, posinf=0.0, neginf=0.0) / num_ventanas
+                cociente_yz += np.nan_to_num(fy_suavizado / fz_suavizado, nan=0.0, posinf=0.0, neginf=0.0) / num_ventanas
+                cociente_xz2 += np.nan_to_num((fx_suavizado / fz_suavizado)**2, nan=0.0, posinf=0.0, neginf=0.0) / num_ventanas
+                cociente_yz2 += np.nan_to_num((fy_suavizado / fz_suavizado)**2, nan=0.0, posinf=0.0, neginf=0.0) / num_ventanas
 
         # 5. Calcular estadísticas
         var_xz = cociente_xz2 - cociente_xz**2
@@ -418,6 +432,9 @@ def main():
                     df_comparacion = pd.concat([df.head(10), df_dividido.head(10)], axis=1)
                     df_comparacion.columns = ['x_original', 'y_original', 'z_original', 'x_dividido', 'y_dividido', 'z_dividido']
                     st.write(df_comparacion)
+                
+                
+                # Calcular con los espectros suavizados.
                 
                 resultados_hv = analisis_hv_mejorado(
                     datos_x, datos_y, datos_z,
