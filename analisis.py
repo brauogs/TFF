@@ -88,9 +88,11 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, suav
         y = aplicar_filtro_pasabanda(corregir_linea_base(y), fs)
         z = aplicar_filtro_pasabanda(corregir_linea_base(z), fs)
         
-        # 2. Inicializar listas para almacenar los cocientes
-        hv_ratios_xz = []
-        hv_ratios_yz = []
+        # 2. Inicializar acumuladores para los cocientes
+        cociente_xz = np.zeros(tamano_ventana // 2)
+        cociente_yz = np.zeros(tamano_ventana // 2)
+        cociente_xz2 = np.zeros(tamano_ventana // 2)
+        cociente_yz2 = np.zeros(tamano_ventana // 2)
         
         # 3. Repetir el proceso para cada ventana
         for _ in range(num_ventanas):
@@ -105,30 +107,28 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, suav
             _, fy = calcular_espectro_fourier(y1, fs)
             _, fz = calcular_espectro_fourier(z1, fs)
             
-            # 6. Calcular los cocientes x1/z1 y y1/z1
-            hv_xz = fx / fz
-            hv_yz = fy / fz
-            
-            # 7. Almacenar los cocientes
-            hv_ratios_xz.append(hv_xz)
-            hv_ratios_yz.append(hv_yz)
+            # 6. Acumular los cocientes y sus cuadrados
+            cociente_xz += fx / fz / num_ventanas
+            cociente_yz += fy / fz / num_ventanas
+            cociente_xz2 += (fx / fz) ** 2 / num_ventanas
+            cociente_yz2 += (fy / fz) ** 2 / num_ventanas
         
-        # 8. Calcular el promedio y la desviación estándar de los cocientes
-        hv_promedio_xz = np.mean(hv_ratios_xz, axis=0)
-        hv_std_xz = np.std(hv_ratios_xz, axis=0)
+        # 7. Calcular la varianza y la desviación estándar
+        var_xz = cociente_xz2 - cociente_xz**2
+        std_xz = np.sqrt(var_xz)
         
-        hv_promedio_yz = np.mean(hv_ratios_yz, axis=0)
-        hv_std_yz = np.std(hv_ratios_yz, axis=0)
+        var_yz = cociente_yz2 - cociente_yz**2
+        std_yz = np.sqrt(var_yz)
         
-        # 9. Suavizar los resultados si es necesario
+        # 8. Suavizar los resultados si es necesario
         if suavizado:
-            hv_suavizado_xz = signal.savgol_filter(hv_promedio_xz, window_length=11, polyorder=3)
-            hv_suavizado_yz = signal.savgol_filter(hv_promedio_yz, window_length=11, polyorder=3)
+            hv_suavizado_xz = signal.savgol_filter(cociente_xz, window_length=11, polyorder=3)
+            hv_suavizado_yz = signal.savgol_filter(cociente_yz, window_length=11, polyorder=3)
         else:
-            hv_suavizado_xz = hv_promedio_xz
-            hv_suavizado_yz = hv_promedio_yz
+            hv_suavizado_xz = cociente_xz
+            hv_suavizado_yz = cociente_yz
         
-        # 10. Encontrar la frecuencia fundamental
+        # 9. Encontrar la frecuencia fundamental
         indice_max_xz = np.argmax(hv_suavizado_xz)
         frecuencia_fundamental_xz = frecuencias[indice_max_xz]
         periodo_fundamental_xz = 1 / frecuencia_fundamental_xz
@@ -137,17 +137,17 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, suav
         frecuencia_fundamental_yz = frecuencias[indice_max_yz]
         periodo_fundamental_yz = 1 / frecuencia_fundamental_yz
         
-        # 11. Retornar los resultados
+        # 10. Retornar los resultados
         return {
             'frecuencias': frecuencias,
-            'hv_xz': hv_promedio_xz,
-            'hv_yz': hv_promedio_yz,
+            'hv_xz': cociente_xz,
+            'hv_yz': cociente_yz,
             'hv_suavizado_xz': hv_suavizado_xz,
             'hv_suavizado_yz': hv_suavizado_yz,
-            'hv_mas_std_xz': hv_promedio_xz + hv_std_xz,
-            'hv_menos_std_xz': hv_promedio_xz - hv_std_xz,
-            'hv_mas_std_yz': hv_promedio_yz + hv_std_yz,
-            'hv_menos_std_yz': hv_promedio_yz - hv_std_yz,
+            'hv_mas_std_xz': cociente_xz + std_xz,
+            'hv_menos_std_xz': cociente_xz - std_xz,
+            'hv_mas_std_yz': cociente_yz + std_yz,
+            'hv_menos_std_yz': cociente_yz - std_yz,
             'frecuencia_fundamental_xz': frecuencia_fundamental_xz,
             'frecuencia_fundamental_yz': frecuencia_fundamental_yz,
             'periodo_fundamental_xz': periodo_fundamental_xz,
