@@ -164,6 +164,7 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000,
                 cociente_xz2 += ((fx_suavizado / fz_suavizado)**2) / num_ventanas
                 cociente_yz2 += ((fy_suavizado / fz_suavizado)**2)/ num_ventanas
 
+
         # 5. Calcular estadísticas
         var_xz = cociente_xz2 - cociente_xz**2
         std_xz = np.sqrt(np.abs(var_xz))  # Valor absoluto para evitar valores negativos por errores numéricos
@@ -171,33 +172,8 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000,
         var_yz = cociente_yz2 - cociente_yz**2
         std_yz = np.sqrt(np.abs(var_yz))
 
-        # 6. Suavizado adaptativo
-        if suavizado:
-            window_length = 15 if device_type == 'mobile' else 11
-            hv_suavizado_xz = signal.savgol_filter(cociente_xz, window_length=window_length, polyorder=3)
-            hv_suavizado_yz = signal.savgol_filter(cociente_yz, window_length=window_length, polyorder=3)
-        else:
-            hv_suavizado_xz = cociente_xz
-            hv_suavizado_yz = cociente_yz
-
         # 7. Detección de pico fundamental en rango específico
-        mask = (frecuencias >= rango_busqueda_pico[0]) & (frecuencias <= rango_busqueda_pico[1])
-        
-        try:
-            indice_max_xz = np.nanargmax(hv_suavizado_xz[mask]) + np.argmax(mask)
-            frecuencia_fundamental_xz = frecuencias[indice_max_xz]
-        except:
-            frecuencia_fundamental_xz = 0.0
-            
-        try:
-            indice_max_yz = np.nanargmax(hv_suavizado_yz[mask]) + np.argmax(mask)
-            frecuencia_fundamental_yz = frecuencias[indice_max_yz]
-        except:
-            frecuencia_fundamental_yz = 0.0
-
-        # 8. Calcular parámetros de calidad
-        calidad_xz = hv_suavizado_xz[indice_max_xz] / np.median(hv_suavizado_xz[mask])
-        calidad_yz = hv_suavizado_yz[indice_max_yz] / np.median(hv_suavizado_yz[mask])
+       
 
         return {
             'frecuencias': frecuencias,
