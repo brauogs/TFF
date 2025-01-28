@@ -229,7 +229,7 @@ def graficar_hv(resultados_hv, st):
 
     fig = go.Figure()
     
-    # Gráfico para x/z
+    # Gráfico para H/V
     fig.add_trace(go.Scatter(
         x=resultados_hv['frecuencias'],
         y=resultados_hv['hv_suavizado_xz'],
@@ -238,7 +238,6 @@ def graficar_hv(resultados_hv, st):
         line=dict(color='blue', width=2)
     ))
     
-    # Gráfico para y/z
     fig.add_trace(go.Scatter(
         x=resultados_hv['frecuencias'],
         y=resultados_hv['hv_suavizado_yz'],
@@ -252,31 +251,30 @@ def graficar_hv(resultados_hv, st):
         x=resultados_hv['frecuencias'],
         y=resultados_hv['hv_suavizado_xz'] + resultados_hv['std_xz'],
         mode='lines',
-        name='m+s (X/Z)',
-        line=dict(color='gray', width=1, dash='dash')
+        name='X/Z +σ',
+        line=dict(color='lightblue', width=1, dash='dash')
     ))
     fig.add_trace(go.Scatter(
         x=resultados_hv['frecuencias'],
         y=resultados_hv['hv_suavizado_xz'] - resultados_hv['std_xz'],
         mode='lines',
-        name='m-s (X/Z)',
-        line=dict(color='gray', width=1, dash='dash')
+        name='X/Z -σ',
+        line=dict(color='lightblue', width=1, dash='dash')
     ))
     
-    
     fig.add_trace(go.Scatter(
-            x=resultados_hv['frecuencias'],
-            y=resultados_hv['hv_suavizado_yz'] + resultados_hv['std_yz'],
-            mode='lines',
-            name='m+s (Y/Z)',
-            line=dict(color='lightgray', width=1, dash='dash')
-        ))
+        x=resultados_hv['frecuencias'],
+        y=resultados_hv['hv_suavizado_yz'] + resultados_hv['std_yz'],
+        mode='lines',
+        name='Y/Z +σ',
+        line=dict(color='lightcoral', width=1, dash='dash')
+    ))
     fig.add_trace(go.Scatter(
         x=resultados_hv['frecuencias'],
         y=resultados_hv['hv_suavizado_yz'] - resultados_hv['std_yz'],
         mode='lines',
-        name='m-s (Y/Z)',
-        line=dict(color='lightgray', width=1, dash='dash')
+        name='Y/Z -σ',
+        line=dict(color='lightcoral', width=1, dash='dash')
     ))
     
     # Marcadores para las frecuencias fundamentales
@@ -284,31 +282,42 @@ def graficar_hv(resultados_hv, st):
         x=[resultados_hv['frecuencia_fundamental_xz']],
         y=[resultados_hv['hv_suavizado_xz'][np.argmax(resultados_hv['hv_suavizado_xz'])]],
         mode='markers',
-        name='Frecuencia fundamental (X/Z)',
+        name='f₀ (X/Z)',
         marker=dict(color='green', size=10, symbol='star')
     ))
     fig.add_trace(go.Scatter(
         x=[resultados_hv['frecuencia_fundamental_yz']],
         y=[resultados_hv['hv_suavizado_yz'][np.argmax(resultados_hv['hv_suavizado_yz'])]],
         mode='markers',
-        name='Frecuencia fundamental (Y/Z)',
+        name='f₀ (Y/Z)',
         marker=dict(color='orange', size=10, symbol='star')
     ))
+    
+    # Líneas de referencia
+    fig.add_hline(y=2, line_dash="dot", line_color="gray", annotation_text="H/V = 2")
+    fig.add_hline(y=4, line_dash="dot", line_color="gray", annotation_text="H/V = 4")
     
     # Configuración del gráfico
     fig.update_layout(
         title="Análisis H/V",
-        xaxis_title="f, Hz",
+        xaxis_title="Frecuencia (Hz)",
         yaxis_title="H/V",
         xaxis_type="log",
         yaxis_type="log",
-        xaxis_range=[np.log10(0.05), np.log10(1.5)],  # Limitar eje x de 0.05 a 1.5 Hz
+        xaxis_range=[np.log10(0.1), np.log10(50)],  # Rango típico para H/V
+        yaxis_range=[np.log10(0.1), np.log10(10)],  # Rango típico para H/V
         plot_bgcolor='white',
         width=800,
-        height=500
+        height=500,
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01
+        )
     )
     
-    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
+    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray', dtick=0.30103)  # dtick para escala log
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
     
     img_bytes = fig.to_image(format="png")
@@ -467,3 +476,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
