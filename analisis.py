@@ -67,8 +67,7 @@ def descargar_archivo(user_id, file_name):
 def corregir_linea_base(datos):
     return datos - np.mean(datos)
 
-# Una vez
-def aplicar_filtro_pasabanda(datos, fs, fmin=0.05, fmax=10):
+def aplicar_filtro_pasabanda(datos, fs, fmin, fmax):
     nyq = 0.5 * fs
     b, a = signal.butter(4, [fmin/nyq, fmax/nyq], btype='band')
     return signal.filtfilt(b, a, datos)
@@ -82,41 +81,15 @@ def calcular_espectro_fourier(datos, fs):
 def dividir_entre_gravedad(x, y, z):
     return x / 9.81, y / 9.81, z / 9.81
 
-def preprocesar_movil(datos, fs):
-    """Preprocesamiento adicional para datos de dispositivos móviles"""
-    try:
-        # 1. Filtro notch para eliminar interferencia eléctrica (50/60 Hz)
-        notch_freq = 60 if fs > 100 else 50
-        b, a = signal.iirnotch(notch_freq, 30, fs)
-        datos_filtrados = signal.filtfilt(b, a, datos)
-        
-        # 2. Filtro pasa-altos adicional para eliminar deriva
-        b_hp, a_hp = signal.butter(2, 0.5/(fs/2), btype='high')
-        return signal.filtfilt(b_hp, a_hp, datos_filtrados)
-    except Exception as e:
-        st.error(f"Error en preprocesamiento móvil: {str(e)}")
-        return datos
-
 def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, 
-                        suavizado=True, device_type='accelerometer'):
+                        suavizado=True, fmin=0.1, fmax=10):
     try:
-        # Ajustar parámetros según tipo de dispositivo
-        if device_type == 'mobile':
-            fmin, fmax = 0.1, 20  # Rango optimizado para móviles
-            rango_busqueda_pico = (0.5, 5)  # Rango de búsqueda de frecuencia fundamental
-        else:
-            fmin, fmax = 0.05, 10  # Rango tradicional para acelerómetros
-            rango_busqueda_pico = (0.1, 10)
+        rango_busqueda_pico = (0.1, 10)
 
-        # 1. Preprocesamiento específico para móviles
-        if device_type == 'mobile':
-            x = preprocesar_movil(corregir_linea_base(x), fs)
-            y = preprocesar_movil(corregir_linea_base(y), fs)
-            z = preprocesar_movil(corregir_linea_base(z), fs)
-        else:
-            x = corregir_linea_base(x)
-            y = corregir_linea_base(y)
-            z = corregir_linea_base(z)
+        # 1. Preprocesamiento
+        x = corregir_linea_base(x)
+        y = corregir_linea_base(y)
+        z = corregir_linea_base(z)
 
         # 2. Aplicar filtro pasa banda con parámetros ajustados
         x = aplicar_filtro_pasabanda(x, fs, fmin=fmin, fmax=fmax)
@@ -130,7 +103,7 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000,
         cociente_xz2 = np.zeros(n_fft)
         cociente_yz2 = np.zeros(n_fft)
 
-        # 4. Procesamiento por ventanas - 
+        # 4. Procesamiento por ventanas
         for _ in range(num_ventanas):
             # Seleccionar ventana aleatoria con solapamiento
             max_start = len(x) - tamano_ventana
@@ -139,74 +112,94 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000,
             y1 = y[nini:nini+tamano_ventana]
             z1 = z[nini:nini+tamano_ventana]
 
-            # La amplitud se calcula con la transformada de Fourier. 
+            # Calcular espectros de Fourier
             frecuencias, fx = calcular_espectro_fourier(x1, fs)
             _, fy = calcular_espectro_fourier(y1, fs)
             _, fz = calcular_espectro_fourier(z1, fs)
 
-            # En esta parte se suaviza cada parte por cada ciclo.
-            
-            fx_suavizado = np.zeros_like(fx)
-            fy_suavizado = np.zeros_like(fy)
-            fz_suavizado = np.zeros_like(fz)
-            
-            #Aquí ya se suavizó cada parte.
-            window_length = 15 if device_type == 'mobile' else 11 
-            fx_suavizado = signal.savgol_filter(fx, window_length=11, polyorder=3)
-            fy_suavizado = signal.savgol_filter(fy, window_length=11, polyorder=3)
-            fz_suavizado = signal.savgol_filter(fz, window_length=11, polyorder=3)
-            
+            # Suavizar espectros
+            window_length = 11
+            fx_suavizado = signal.savgol_filter(fx, window_length=window_length, polyorder=3)
+            fy_suavizado = signal.savgol_filter(fy, window_length=window_length, polyorder=3)
+            fz_suavizado = signal.savgol_filter(fz, window_length=window_length, polyorder=3)
             
             # Acumular cocientes
             with np.errstate(divide='ignore', invalid='ignore'):
-                cociente_xz += fx_suavizado / fz_suavizado/ num_ventanas
-                cociente_yz += fy_suavizado / fz_suavizado/ num_ventanas
-                cociente_xz2 += ((fx_suavizado / fz_suavizado)**2) / num_ventanas
-                cociente_yz2 += ((fy_suavizado / fz_suavizado)**2)/ num_ventanas
-
+                cociente_xz += fx_suavizado / fz_suavizado / num_ventanas
+                cociente_yz += fy_suavizado / fz_suavizado / num_ventanas
+                cociente_xz2 += (fx_suavizado / fz_suavizado)**2 / num_ventanas
+                cociente_yz2 += (fy_suavizado / fz_suavizado)**2 / num_ventanas
 
         # 5. Calcular estadísticas
         var_xz = cociente_xz2 - cociente_xz**2
-        std_xz = np.sqrt(np.abs(var_xz))  # Valor absoluto para evitar valores negativos por errores numéricos
+        std_xz = np.sqrt(np.abs(var_xz))
 
         var_yz = cociente_yz2 - cociente_yz**2
         std_yz = np.sqrt(np.abs(var_yz))
 
+        # 6. Suavizado adaptativo
+        if suavizado:
+            window_length = 11
+            hv_suavizado_xz = signal.savgol_filter(cociente_xz, window_length=window_length, polyorder=3)
+            hv_suavizado_yz = signal.savgol_filter(cociente_yz, window_length=window_length, polyorder=3)
+        else:
+            hv_suavizado_xz = cociente_xz
+            hv_suavizado_yz = cociente_yz
+
         # 7. Detección de pico fundamental en rango específico
-       
+        mask = (frecuencias >= rango_busqueda_pico[0]) & (frecuencias <= rango_busqueda_pico[1])
+        
+        try:
+            indice_max_xz = np.nanargmax(hv_suavizado_xz[mask]) + np.argmax(mask)
+            frecuencia_fundamental_xz = frecuencias[indice_max_xz]
+        except:
+            frecuencia_fundamental_xz = 0.0
+            
+        try:
+            indice_max_yz = np.nanargmax(hv_suavizado_yz[mask]) + np.argmax(mask)
+            frecuencia_fundamental_yz = frecuencias[indice_max_yz]
+        except:
+            frecuencia_fundamental_yz = 0.0
+
+        # 8. Calcular parámetros de calidad
+        calidad_xz = hv_suavizado_xz[indice_max_xz] / np.median(hv_suavizado_xz[mask])
+        calidad_yz = hv_suavizado_yz[indice_max_yz] / np.median(hv_suavizado_yz[mask])
 
         return {
             'frecuencias': frecuencias,
             'hv_xz': cociente_xz,
             'hv_yz': cociente_yz,
-            #'hv_suavizado_xz': hv_suavizado_xz,
-            #'hv_suavizado_yz': hv_suavizado_yz,
+            'hv_suavizado_xz': hv_suavizado_xz,
+            'hv_suavizado_yz': hv_suavizado_yz,
             'std_xz': std_xz,
             'std_yz': std_yz,
-            #'frecuencia_fundamental_xz': frecuencia_fundamental_xz,
-            #'frecuencia_fundamental_yz': frecuencia_fundamental_yz,
-            #'periodo_fundamental_xz': 1/frecuencia_fundamental_xz if frecuencia_fundamental_xz > 0 else 0,
-            #'periodo_fundamental_yz': 1/frecuencia_fundamental_yz if frecuencia_fundamental_yz > 0 else 0,
-            #'calidad_xz': calidad_xz,
-            #'calidad_yz': calidad_yz,
-            #'mask_rango_valido': mask
+            'frecuencia_fundamental_xz': frecuencia_fundamental_xz,
+            'frecuencia_fundamental_yz': frecuencia_fundamental_yz,
+            'periodo_fundamental_xz': 1/frecuencia_fundamental_xz if frecuencia_fundamental_xz > 0 else 0,
+            'periodo_fundamental_yz': 1/frecuencia_fundamental_yz if frecuencia_fundamental_yz > 0 else 0,
+            'calidad_xz': calidad_xz,
+            'calidad_yz': calidad_yz,
+            'mask_rango_valido': mask,
+            'fx': fx_suavizado,
+            'fy': fy_suavizado,
+            'fz': fz_suavizado
         }
     except Exception as e:
         st.error(f"Error en el análisis H/V: {str(e)}")
         return None
 
 # Funciones de visualización
-def graficar_canales_individuales(x, y, z, fs, st, device_type='accelerometer'):
+def graficar_canales_individuales(x, y, z, fs, st):
     fig = make_subplots(rows=3, cols=1, subplot_titles=('Canal X', 'Canal Y', 'Canal Z'))
     
     tiempo = np.arange(len(x)) / fs
-    line_width = 1 if device_type == 'accelerometer' else 3
+    line_width = 1
     
     fig.add_trace(go.Scatter(x=tiempo, y=x, name='X', line=dict(width=line_width)), row=1, col=1)
     fig.add_trace(go.Scatter(x=tiempo, y=y, name='Y', line=dict(width=line_width)), row=2, col=1)
     fig.add_trace(go.Scatter(x=tiempo, y=z, name='Z', line=dict(width=line_width)), row=3, col=1)
     
-    fig.update_layout(height=800, showlegend=True, title_text=f"Canales filtrados (0.05-10 Hz) - {device_type.title()}")
+    fig.update_layout(height=800, showlegend=True, title_text="Canales filtrados")
     
     img_bytes = fig.to_image(format="png")
     st.download_button(label="Descargar gráfica como imagen", data=img_bytes, file_name="grafica_canales.png", mime="image/png")
@@ -314,6 +307,86 @@ def graficar_hv(resultados_hv, st):
     st.download_button(label="Descargar gráfica como imagen", data=img_bytes, file_name="grafica_hv.png", mime="image/png")
     return fig
 
+def graficar_espectro_fourier(resultados_hv, st):
+    if resultados_hv is None:
+        st.error("No se pudieron obtener los resultados del análisis H/V.")
+        return None
+
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(
+        x=resultados_hv['frecuencias'],
+        y=resultados_hv['fx'],
+        mode='lines',
+        name='Espectro X',
+        line=dict(color='blue')
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=resultados_hv['frecuencias'],
+        y=resultados_hv['fy'],
+        mode='lines',
+        name='Espectro Y',
+        line=dict(color='red')
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=resultados_hv['frecuencias'],
+        y=resultados_hv['fz'],
+        mode='lines',
+        name='Espectro Z',
+        line=dict(color='green')
+    ))
+    
+    fig.update_layout(
+        title="Espectro de Fourier",
+        xaxis_title="Frecuencia (Hz)",
+        yaxis_title="Amplitud",
+        xaxis_type="log",
+        yaxis_type="log",
+        plot_bgcolor='white'
+    )
+    
+    img_bytes = fig.to_image(format="png")
+    st.download_button(label="Descargar gráfica como imagen", data=img_bytes, file_name="grafica_espectro_fourier.png", mime="image/png")
+    return fig
+
+def graficar_cocientes(resultados_hv, st):
+    if resultados_hv is None:
+        st.error("No se pudieron obtener los resultados del análisis H/V.")
+        return None
+
+    fig = go.Figure()
+    
+    fig.add_trace(go.Scatter(
+        x=resultados_hv['frecuencias'],
+        y=resultados_hv['hv_xz'],
+        mode='lines',
+        name='Cociente X/Z',
+        line=dict(color='blue')
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=resultados_hv['frecuencias'],
+        y=resultados_hv['hv_yz'],
+        mode='lines',
+        name='Cociente Y/Z',
+        line=dict(color='red')
+    ))
+    
+    fig.update_layout(
+        title="Cocientes H/V",
+        xaxis_title="Frecuencia (Hz)",
+        yaxis_title="Cociente H/V",
+        xaxis_type="log",
+        yaxis_type="log",
+        plot_bgcolor='white'
+    )
+    
+    img_bytes = fig.to_image(format="png")
+    st.download_button(label="Descargar gráfica como imagen", data=img_bytes, file_name="grafica_cocientes_hv.png", mime="image/png")
+    return fig
+
 def main():
     st.title("Análisis del Acelerograma")
     st.sidebar.image("logoUAMSis.png", use_container_width=True)
@@ -383,13 +456,11 @@ def main():
             tamano_ventana = st.sidebar.number_input("Tamaño de ventana (puntos)", min_value=100, max_value=10000, value=2000)
             dividir_por_g = st.sidebar.checkbox("Dividir datos por 9.81 (gravedad)", value=False)
             
-            device_type = st.sidebar.selectbox(
-                "Tipo de dispositivo",
-                ["accelerometer", "mobile"],
-                format_func=lambda x: "Acelerómetro" if x == "accelerometer" else "Dispositivo móvil"
-            )
-
             suavizar_hv = st.sidebar.checkbox("Suavizar curva H/V", value=True)
+            
+            # Nuevos parámetros para el filtro pasa banda
+            fmin = st.sidebar.number_input("Frecuencia mínima del filtro (Hz)", min_value=0.01, max_value=10.0, value=0.1, step=0.01)
+            fmax = st.sidebar.number_input("Frecuencia máxima del filtro (Hz)", min_value=1.0, max_value=50.0, value=10.0, step=0.1)
 
             if st.button("Analizar datos"):
                 datos_x = df['x'].values
@@ -409,24 +480,32 @@ def main():
                     df_comparacion.columns = ['x_original', 'y_original', 'z_original', 'x_dividido', 'y_dividido', 'z_dividido']
                     st.write(df_comparacion)
                 
-                
-                # Calcular con los espectros suavizados.
-                
                 resultados_hv = analisis_hv_mejorado(
                     datos_x, datos_y, datos_z,
                     fs=fs,
                     num_ventanas=num_ventanas,
                     tamano_ventana=tamano_ventana,
                     suavizado=suavizar_hv,
-                    device_type=device_type
+                    fmin=fmin,
+                    fmax=fmax
                 )
                 
                 if resultados_hv is not None:
-                    st.subheader("Canales filtrados (0.05-1.5 Hz)")
+                    st.subheader(f"Canales filtrados ({fmin}-{fmax} Hz)")
                     fig_canales = graficar_canales_individuales(
-                        datos_x, datos_y, datos_z, fs, st, device_type
+                        datos_x, datos_y, datos_z, fs, st
                     )
                     st.plotly_chart(fig_canales)
+                    
+                    st.subheader("Espectro de Fourier")
+                    fig_fourier = graficar_espectro_fourier(resultados_hv, st)
+                    if fig_fourier is not None:
+                        st.plotly_chart(fig_fourier)
+                    
+                    st.subheader("Cocientes H/V")
+                    fig_cocientes = graficar_cocientes(resultados_hv, st)
+                    if fig_cocientes is not None:
+                        st.plotly_chart(fig_cocientes)
                     
                     st.subheader("Análisis H/V")
                     fig_hv = graficar_hv(resultados_hv, st)
@@ -434,18 +513,9 @@ def main():
                         st.plotly_chart(fig_hv)
                     
                     st.subheader("Estadísticas del análisis H/V")
-                    st.write(f"Frecuencia fundamental (X/Z): {resultados_hv['frecuencia_fundamental_xz']:.2f} Hz")
-                    st.write(f"Frecuencia fundamental (Y/Z): {resultados_hv['frecuencia_fundamental_yz']:.2f} Hz")
+                    st.write(f"Frecuencia fundamental (X/Z): {resultados_hv.get('frecuencia_fundamental_xz', 'N/A')} Hz")
+                    st.write(f"Frecuencia fundamental (Y/Z): {resultados_hv.get('frecuencia_fundamental_yz', 'N/A')} Hz")
 
-                    if abs(resultados_hv['frecuencia_fundamental_xz'] - 1.16) <= 0.05:
-                        st.success("La frecuencia fundamental (X/Z) coincide con el valor esperado de 1.16 Hz")
-                    else:
-                        st.info(f"La frecuencia fundamental (X/Z) calculada ({resultados_hv['frecuencia_fundamental_xz']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
-
-                    if abs(resultados_hv['frecuencia_fundamental_yz'] - 1.16) <= 0.05:
-                        st.success("La frecuencia fundamental (Y/Z) coincide con el valor esperado de 1.16 Hz")
-                    else:
-                        st.info(f"La frecuencia fundamental (Y/Z) calculada ({resultados_hv['frecuencia_fundamental_yz']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
                 else:
                     st.error("No se pudo realizar el análisis H/V. Por favor, revise los datos de entrada y los parámetros.")
 
@@ -458,10 +528,12 @@ def main():
        - Frecuencia de muestreo
        - Número de ventanas para análisis H/V
        - Tamaño de ventana
-       - Tipo de dispositivo
        - Suavizado de la curva H/V
+       - Frecuencias mínima y máxima del filtro pasa banda
     5. Haga clic en 'Analizar datos' para ver:
        - Canales filtrados individualmente
+       - Espectro de Fourier
+       - Cocientes H/V
        - Análisis H/V
        - Estadísticas del análisis
     6. Descargue los resultados si lo desea.
