@@ -83,76 +83,79 @@ def dividir_entre_gravedad(x, y, z):
 
 def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, suavizado=True):
     try:
-        # 1. Corregir línea base y aplicar filtro pasa banda
+        # Verificar longitud mínima de los datos
+        if len(x) < tamano_ventana:
+            raise ValueError("La señal es más corta que el tamaño de ventana especificado")
+
+        # 1. Corrección de línea base y filtrado
         x = aplicar_filtro_pasabanda(corregir_linea_base(x), fs)
         y = aplicar_filtro_pasabanda(corregir_linea_base(y), fs)
         z = aplicar_filtro_pasabanda(corregir_linea_base(z), fs)
-        
-        # 2. Inicializar listas para almacenar los cocientes
-        hv_ratios_xz = []
-        hv_ratios_yz = []
-        
-        # 3. Repetir el proceso para cada ventana
+
+        # 2. Evitar división por cero en componentes Z
+        z = np.where(z == 0, 1e-6, z)  # Reemplazar ceros por un valor pequeño
+
+        # 3. Inicializar listas para almacenar HV
+        hv_ratios = []
+
+        # 4. Procesamiento por ventanas
         for _ in range(num_ventanas):
-            # 4. Seleccionar una ventana aleatoria
+            # Seleccionar ventana aleatoria
             nini = random.randint(0, len(x) - tamano_ventana)
-            x1 = x[nini:nini+tamano_ventana]
-            y1 = y[nini:nini+tamano_ventana]
-            z1 = z[nini:nini+tamano_ventana]
-            
-            # 5. Calcular los espectros de Fourier
-            frecuencias, fx = calcular_espectro_fourier(x1, fs)
-            _, fy = calcular_espectro_fourier(y1, fs)
-            _, fz = calcular_espectro_fourier(z1, fs)
-            
-            # 6. Calcular los cocientes x1/z1 y y1/z1
-            hv_xz = fx / fz
-            hv_yz = fy / fz
-            
-            # 7. Almacenar los cocientes
-            hv_ratios_xz.append(hv_xz)
-            hv_ratios_yz.append(hv_yz)
-        
-        # 8. Calcular el promedio y la desviación estándar de los cocientes
-        hv_promedio_xz = np.mean(hv_ratios_xz, axis=0)
-        hv_std_xz = np.std(hv_ratios_xz, axis=0)
-        
-        hv_promedio_yz = np.mean(hv_ratios_yz, axis=0)
-        hv_std_yz = np.std(hv_ratios_yz, axis=0)
-        
-        # 9. Suavizar los resultados si es necesario
+            x_win = x[nini:nini+tamano_ventana]
+            y_win = y[nini:nini+tamano_ventana]
+            z_win = z[nini:nini+tamano_ventana]
+
+            # Calcular espectros
+            frecuencias, fx = calcular_espectro_fourier(x_win, fs)
+            _, fy = calcular_espectro_fourier(y_win, fs)
+            _, fz = calcular_espectro_fourier(z_win, fs)
+
+            # Calcular HV según método Nakamura (H = sqrt(HN^2 + HE^2))
+            with np.errstate(divide='ignore', invalid='ignore'):
+                hv = np.sqrt(fx**2 + fy**2) / fz
+                hv = np.nan_to_num(hv, nan=0.0, posinf=0.0, neginf=0.0)  # Manejar valores inválidos
+
+            hv_ratios.append(hv)
+
+        # 5. Promedio y desviación estándar
+        hv_promedio = np.mean(hv_ratios, axis=0)
+        hv_std = np.std(hv_ratios, axis=0)
+
+        # 6. Suavizado mejorado
         if suavizado:
-            hv_suavizado_xz = signal.savgol_filter(hv_promedio_xz, window_length=11, polyorder=3)
-            hv_suavizado_yz = signal.savgol_filter(hv_promedio_yz, window_length=11, polyorder=3)
+            hv_suavizado = signal.savgol_filter(hv_promedio, 
+                                               window_length=min(11, len(hv_promedio)//2*2-1),  # Asegurar ventana impar
+                                               polyorder=3)
         else:
-            hv_suavizado_xz = hv_promedio_xz
-            hv_suavizado_yz = hv_promedio_yz
-        
-        # 10. Encontrar la frecuencia fundamental
-        indice_max_xz = np.argmax(hv_suavizado_xz)
-        frecuencia_fundamental_xz = frecuencias[indice_max_xz]
-        periodo_fundamental_xz = 1 / frecuencia_fundamental_xz
-        
-        indice_max_yz = np.argmax(hv_suavizado_yz)
-        frecuencia_fundamental_yz = frecuencias[indice_max_yz]
-        periodo_fundamental_yz = 1 / frecuencia_fundamental_yz
-        
-        # 11. Retornar los resultados
+            hv_suavizado = hv_promedio
+
+        # 7. Detección robusta de pico fundamental
+        # Restringir búsqueda a frecuencias relevantes (0.1 a 10 Hz)
+        mask = (frecuencias >= 0.1) & (frecuencias <= 10)
+        frecuencias_filtradas = frecuencias[mask]
+        hv_filtrado = hv_suavizado[mask]
+
+        # Encontrar pico más prominente
+        peaks, _ = signal.find_peaks(hv_filtrado, prominence=0.5)
+        if len(peaks) > 0:
+            peak_idx = peaks[np.argmax(hv_filtrado[peaks])]
+            frecuencia_fundamental = frecuencias_filtradas[peak_idx]
+        else:
+            frecuencia_fundamental = frecuencias_filtradas[np.argmax(hv_filtrado)]
+
+        periodo_fundamental = 1 / frecuencia_fundamental if frecuencia_fundamental > 0 else 0
+
         return {
             'frecuencias': frecuencias,
-            'hv_xz': hv_promedio_xz,
-            'hv_yz': hv_promedio_yz,
-            'hv_suavizado_xz': hv_suavizado_xz,
-            'hv_suavizado_yz': hv_suavizado_yz,
-            'hv_mas_std_xz': hv_promedio_xz + hv_std_xz,
-            'hv_menos_std_xz': hv_promedio_xz - hv_std_xz,
-            'hv_mas_std_yz': hv_promedio_yz + hv_std_yz,
-            'hv_menos_std_yz': hv_promedio_yz - hv_std_yz,
-            'frecuencia_fundamental_xz': frecuencia_fundamental_xz,
-            'frecuencia_fundamental_yz': frecuencia_fundamental_yz,
-            'periodo_fundamental_xz': periodo_fundamental_xz,
-            'periodo_fundamental_yz': periodo_fundamental_yz
+            'hv': hv_promedio,
+            'hv_suavizado': hv_suavizado,
+            'hv_mas_std': hv_promedio + hv_std,
+            'hv_menos_std': hv_promedio - hv_std,
+            'frecuencia_fundamental': frecuencia_fundamental,
+            'periodo_fundamental': periodo_fundamental
         }
+
     except Exception as e:
         st.error(f"Error en el análisis H/V: {str(e)}")
         return None
@@ -177,88 +180,53 @@ def graficar_canales_individuales(x, y, z, fs, st, device_type='accelerometer'):
 def graficar_hv(resultados_hv, st):
     fig = go.Figure()
     
-    # Gráfico para x/z
+    # Curva H/V
     fig.add_trace(go.Scatter(
         x=resultados_hv['frecuencias'],
-        y=resultados_hv['hv_suavizado_xz'],
+        y=resultados_hv['hv_suavizado'],
         mode='lines',
-        name='H/V (X/Z)',
+        name='H/V Suavizado',
         line=dict(color='blue', width=2)
     ))
     
-    # Gráfico para y/z
+    # Banda de desviación estándar
     fig.add_trace(go.Scatter(
         x=resultados_hv['frecuencias'],
-        y=resultados_hv['hv_suavizado_yz'],
+        y=resultados_hv['hv_mas_std'],
         mode='lines',
-        name='H/V (Y/Z)',
-        line=dict(color='red', width=2)
-    ))
-    
-    # Líneas de desviación estándar
-    fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'],
-        y=resultados_hv['hv_mas_std_xz'],
-        mode='lines',
-        name='m+s (X/Z)',
-        line=dict(color='gray', width=1, dash='dash')
-    ))
-    fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'],
-        y=resultados_hv['hv_menos_std_xz'],
-        mode='lines',
-        name='m-s (X/Z)',
+        name='+1σ',
         line=dict(color='gray', width=1, dash='dash')
     ))
     
     fig.add_trace(go.Scatter(
         x=resultados_hv['frecuencias'],
-        y=resultados_hv['hv_mas_std_yz'],
+        y=resultados_hv['hv_menos_std'],
         mode='lines',
-        name='m+s (Y/Z)',
-        line=dict(color='lightgray', width=1, dash='dash')
-    ))
-    fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'],
-        y=resultados_hv['hv_menos_std_yz'],
-        mode='lines',
-        name='m-s (Y/Z)',
-        line=dict(color='lightgray', width=1, dash='dash')
+        name='-1σ',
+        line=dict(color='gray', width=1, dash='dash')
     ))
     
-    # Marcadores para las frecuencias fundamentales
+    # Marcar frecuencia fundamental
     fig.add_trace(go.Scatter(
-        x=[resultados_hv['frecuencia_fundamental_xz']],
-        y=[resultados_hv['hv_suavizado_xz'][np.argmax(resultados_hv['hv_suavizado_xz'])]],
+        x=[resultados_hv['frecuencia_fundamental']],
+        y=[np.max(resultados_hv['hv_suavizado'])],
         mode='markers',
-        name='Frecuencia fundamental (X/Z)',
-        marker=dict(color='green', size=10, symbol='star')
-    ))
-    fig.add_trace(go.Scatter(
-        x=[resultados_hv['frecuencia_fundamental_yz']],
-        y=[resultados_hv['hv_suavizado_yz'][np.argmax(resultados_hv['hv_suavizado_yz'])]],
-        mode='markers',
-        name='Frecuencia fundamental (Y/Z)',
-        marker=dict(color='orange', size=10, symbol='star')
+        name='Frecuencia Fundamental',
+        marker=dict(color='red', size=10, symbol='x')
     ))
     
     # Configuración del gráfico
     fig.update_layout(
-        title="Análisis H/V",
-        xaxis_title="f, Hz",
-        yaxis_title="H/V",
+        title="Análisis H/V - Método Nakamura",
+        xaxis_title="Frecuencia (Hz)",
+        yaxis_title="Amplitud H/V",
         xaxis_type="log",
-        yaxis_type="log",
-        plot_bgcolor='white',
-        width=800,
-        height=500
+        yaxis_type="linear",
+        hovermode="x unified",
+        template="plotly_white"
     )
     
-    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
-    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
-    
-    img_bytes = fig.to_image(format="png")
-    st.download_button(label="Descargar gráfica como imagen", data=img_bytes, file_name="grafica_hv.png", mime="image/png")
+    st.plotly_chart(fig)
     return fig
 
 # Main function
