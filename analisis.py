@@ -162,7 +162,7 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000,
                 cociente_xz += fx_suavizado / fz_suavizado/ num_ventanas
                 cociente_xy += fy_suavizado / fz_suavizado/ num_ventanas
                 cociente_xz2 += ((fx_suavizado / fz_suavizado)**2) / num_ventanas
-                cociente_yz2 += ((fy_suavizado / fz_suavizado)**2/ num_ventanas
+                cociente_yz2 += ((fy_suavizado / fz_suavizado)**2)/ num_ventanas
 
         # 5. Calcular estadísticas
         var_xz = cociente_xz2 - cociente_xz**2
