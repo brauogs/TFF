@@ -67,7 +67,7 @@ def download_file(user_id, file_name):
 def corregir_linea_base(datos):
     return datos - np.mean(datos)
 
-def aplicar_filtro_pasabanda(datos, fs, fmin=0.05, fmax=1.5):
+def aplicar_filtro_pasabanda(datos, fs, fmin=0.05, fmax=10):
     nyq = 0.5 * fs
     b, a = signal.butter(4, [fmin/nyq, fmax/nyq], btype='band')
     return signal.filtfilt(b, a, datos)
@@ -81,7 +81,7 @@ def calcular_espectro_fourier(datos, fs):
 def dividir_entre_gravedad(x, y, z):
     return x / 9.81, y / 9.81, z / 9.81
 
-def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, suavizado=True, fmax=10):
+def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, suavizado=True):
     try:
         # 1. Corregir línea base y aplicar filtro pasa banda
         x = aplicar_filtro_pasabanda(corregir_linea_base(x), fs)
@@ -107,32 +107,20 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, suav
             _, fy = calcular_espectro_fourier(y1, fs)
             _, fz = calcular_espectro_fourier(z1, fs)
             
-            # 6. Limitar el análisis a frecuencias por debajo de fmax
-            idx = frecuencias <= fmax
-            frecuencias = frecuencias[idx]
-            fx = fx[idx]
-            fy = fy[idx]
-            fz = fz[idx]
-            
-            # 7. Evitar división por cero
-            fz[fz == 0] = np.finfo(float).eps  # Reemplazar ceros con un valor pequeño
-            fx_div_fz = fx / fz
-            fy_div_fz = fy / fz
-            
-            # 8. Acumular los cocientes y sus cuadrados
-            cociente_xz += fx_div_fz / num_ventanas
-            cociente_yz += fy_div_fz / num_ventanas
-            cociente_xz2 += (fx_div_fz ** 2) / num_ventanas
-            cociente_yz2 += (fy_div_fz ** 2) / num_ventanas
+            # 6. Acumular los cocientes y sus cuadrados
+            cociente_xz += fx / fz / num_ventanas
+            cociente_yz += fy / fz / num_ventanas
+            cociente_xz2 += (fx / fz) ** 2 / num_ventanas
+            cociente_yz2 += (fy / fz) ** 2 / num_ventanas
         
-        # 9. Calcular la varianza y la desviación estándar
+        # 7. Calcular la varianza y la desviación estándar
         var_xz = cociente_xz2 - cociente_xz**2
         std_xz = np.sqrt(var_xz)
         
         var_yz = cociente_yz2 - cociente_yz**2
         std_yz = np.sqrt(var_yz)
         
-        # 10. Suavizar los resultados si es necesario
+        # 8. Suavizar los resultados si es necesario
         if suavizado:
             hv_suavizado_xz = signal.savgol_filter(cociente_xz, window_length=11, polyorder=3)
             hv_suavizado_yz = signal.savgol_filter(cociente_yz, window_length=11, polyorder=3)
@@ -140,7 +128,7 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, suav
             hv_suavizado_xz = cociente_xz
             hv_suavizado_yz = cociente_yz
         
-        # 11. Encontrar la frecuencia fundamental dentro del rango limitado
+        # 9. Encontrar la frecuencia fundamental
         indice_max_xz = np.argmax(hv_suavizado_xz)
         frecuencia_fundamental_xz = frecuencias[indice_max_xz]
         periodo_fundamental_xz = 1 / frecuencia_fundamental_xz
@@ -149,7 +137,7 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, suav
         frecuencia_fundamental_yz = frecuencias[indice_max_yz]
         periodo_fundamental_yz = 1 / frecuencia_fundamental_yz
         
-        # 12. Retornar los resultados
+        # 10. Retornar los resultados
         return {
             'frecuencias': frecuencias,
             'hv_xz': cociente_xz,
@@ -187,19 +175,12 @@ def graficar_canales_individuales(x, y, z, fs, st, device_type='accelerometer'):
     return fig
 
 def graficar_hv(resultados_hv, st):
-    if resultados_hv is None:
-        st.error("No se pudieron obtener los resultados del análisis H/V.")
-        return None
-
     fig = go.Figure()
-    
-    # Limit x-axis to 1.5 Hz
-    mask = resultados_hv['frecuencias'] <= 1.5
     
     # Gráfico para x/z
     fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'][mask],
-        y=resultados_hv['hv_suavizado_xz'][mask],
+        x=resultados_hv['frecuencias'],
+        y=resultados_hv['hv_suavizado_xz'],
         mode='lines',
         name='H/V (X/Z)',
         line=dict(color='blue', width=2)
@@ -207,8 +188,8 @@ def graficar_hv(resultados_hv, st):
     
     # Gráfico para y/z
     fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'][mask],
-        y=resultados_hv['hv_suavizado_yz'][mask],
+        x=resultados_hv['frecuencias'],
+        y=resultados_hv['hv_suavizado_yz'],
         mode='lines',
         name='H/V (Y/Z)',
         line=dict(color='red', width=2)
@@ -216,52 +197,50 @@ def graficar_hv(resultados_hv, st):
     
     # Líneas de desviación estándar
     fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'][mask],
-        y=resultados_hv['hv_mas_std_xz'][mask],
+        x=resultados_hv['frecuencias'],
+        y=resultados_hv['hv_mas_std_xz'],
         mode='lines',
         name='m+s (X/Z)',
         line=dict(color='gray', width=1, dash='dash')
     ))
     fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'][mask],
-        y=resultados_hv['hv_menos_std_xz'][mask],
+        x=resultados_hv['frecuencias'],
+        y=resultados_hv['hv_menos_std_xz'],
         mode='lines',
         name='m-s (X/Z)',
         line=dict(color='gray', width=1, dash='dash')
     ))
     
     fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'][mask],
-        y=resultados_hv['hv_mas_std_yz'][mask],
+        x=resultados_hv['frecuencias'],
+        y=resultados_hv['hv_mas_std_yz'],
         mode='lines',
         name='m+s (Y/Z)',
         line=dict(color='lightgray', width=1, dash='dash')
     ))
     fig.add_trace(go.Scatter(
-        x=resultados_hv['frecuencias'][mask],
-        y=resultados_hv['hv_menos_std_yz'][mask],
+        x=resultados_hv['frecuencias'],
+        y=resultados_hv['hv_menos_std_yz'],
         mode='lines',
         name='m-s (Y/Z)',
         line=dict(color='lightgray', width=1, dash='dash')
     ))
     
     # Marcadores para las frecuencias fundamentales
-    if resultados_hv['frecuencia_fundamental_xz'] <= 1.5:
-        fig.add_trace(go.Scatter(
-            x=[resultados_hv['frecuencia_fundamental_xz']],
-            y=[resultados_hv['hv_suavizado_xz'][np.argmax(resultados_hv['hv_suavizado_xz'][mask])]],
-            mode='markers',
-            name='Frecuencia fundamental (X/Z)',
-            marker=dict(color='green', size=10, symbol='star')
-        ))
-    if resultados_hv['frecuencia_fundamental_yz'] <= 1.5:
-        fig.add_trace(go.Scatter(
-            x=[resultados_hv['frecuencia_fundamental_yz']],
-            y=[resultados_hv['hv_suavizado_yz'][np.argmax(resultados_hv['hv_suavizado_yz'][mask])]],
-            mode='markers',
-            name='Frecuencia fundamental (Y/Z)',
-            marker=dict(color='orange', size=10, symbol='star')
-        ))
+    fig.add_trace(go.Scatter(
+        x=[resultados_hv['frecuencia_fundamental_xz']],
+        y=[resultados_hv['hv_suavizado_xz'][np.argmax(resultados_hv['hv_suavizado_xz'])]],
+        mode='markers',
+        name='Frecuencia fundamental (X/Z)',
+        marker=dict(color='green', size=10, symbol='star')
+    ))
+    fig.add_trace(go.Scatter(
+        x=[resultados_hv['frecuencia_fundamental_yz']],
+        y=[resultados_hv['hv_suavizado_yz'][np.argmax(resultados_hv['hv_suavizado_yz'])]],
+        mode='markers',
+        name='Frecuencia fundamental (Y/Z)',
+        marker=dict(color='orange', size=10, symbol='star')
+    ))
     
     # Configuración del gráfico
     fig.update_layout(
@@ -270,7 +249,6 @@ def graficar_hv(resultados_hv, st):
         yaxis_title="H/V",
         xaxis_type="log",
         yaxis_type="log",
-        xaxis_range=[np.log10(0.05), np.log10(1.5)],  # Limit x-axis from 0.05 to 1.5 Hz
         plot_bgcolor='white',
         width=800,
         height=500
@@ -282,7 +260,7 @@ def graficar_hv(resultados_hv, st):
     img_bytes = fig.to_image(format="png")
     st.download_button(label="Descargar gráfica como imagen", data=img_bytes, file_name="grafica_hv.png", mime="image/png")
     return fig
-    
+
 # Main function
 def main():
     st.title("Análisis del Acelerograma")
@@ -332,12 +310,7 @@ def main():
         if selected_file:
             file_content = download_file(st.session_state.user.uid, selected_file)
             if file_content:
-                st.download_button(
-                    label="Descargar archivo seleccionado",
-                    data=file_content,
-                    file_name=selected_file,
-                    mime="text/csv"
-                )
+                st.download_button(label="Descargar archivo seleccionado", data=file_content, file_name=selected_file, mime="text/csv")
             
             df = pd.read_csv(io.BytesIO(file_content))
             st.write("Visualizar datos:")
@@ -361,24 +334,6 @@ def main():
 
             suavizar_hv = st.sidebar.checkbox("Suavizar curva H/V", value=True)
 
-            aplicar_filtro_ruido = st.sidebar.checkbox("Aplicar filtro de ruido", value=False)
-            if aplicar_filtro_ruido:
-                window_length = st.sidebar.slider(
-                    "Longitud de ventana para filtro de ruido", 
-                    min_value=11, 
-                    max_value=101, 
-                    value=51, 
-                    step=2,
-                    help="Debe ser un número impar. Un valor más alto suaviza más la señal."
-                )
-                polyorder = st.sidebar.slider(
-                    "Orden del polinomio", 
-                    min_value=2, 
-                    max_value=5, 
-                    value=3,
-                    help="Orden del polinomio para el filtro. Un valor más bajo suaviza más la señal."
-                )
-
             if st.button("Analizar datos"):
                 datos_x = df['x'].values
                 datos_y = df['y'].values
@@ -397,56 +352,37 @@ def main():
                     df_comparacion.columns = ['x_original', 'y_original', 'z_original', 'x_dividido', 'y_dividido', 'z_dividido']
                     st.write(df_comparacion)
                 
-                if aplicar_filtro_ruido:
-                    datos_x = reducir_ruido(datos_x, window_length, polyorder)
-                    datos_y = reducir_ruido(datos_y, window_length, polyorder)
-                    datos_z = reducir_ruido(datos_z, window_length, polyorder)
-                
                 resultados_hv = analisis_hv_mejorado(
                     datos_x, datos_y, datos_z,
                     fs=fs,
                     num_ventanas=num_ventanas,
                     tamano_ventana=tamano_ventana,
-                    suavizado=suavizar_hv,
-                    fmax=1.5  # Limit analysis to 1.5 Hz
+                    suavizado=suavizar_hv
                 )
                 
-                if resultados_hv is not None:
-                    st.subheader("Canales filtrados (0.05-1.5 Hz)")
-                    fig_canales = graficar_canales_individuales(
-                        datos_x, datos_y, datos_z, fs, st, device_type
-                    )
-                    st.plotly_chart(fig_canales)
-                    
-                    st.subheader("Análisis H/V")
-                    fig_hv = graficar_hv(resultados_hv, st)
-                    if fig_hv is not None:
-                        st.plotly_chart(fig_hv)
-                    
-                    st.subheader("Estadísticas del análisis H/V")
-                    st.write(f"Frecuencia fundamental (X/Z): {resultados_hv['frecuencia_fundamental_xz']:.2f} Hz")
-                    st.write(f"Frecuencia fundamental (Y/Z): {resultados_hv['frecuencia_fundamental_yz']:.2f} Hz")
+                st.subheader("Canales filtrados (0.05-10 Hz)")
+                fig_canales = graficar_canales_individuales(
+                    datos_x, datos_y, datos_z, fs, st, device_type
+                )
+                st.plotly_chart(fig_canales)
+                
+                st.subheader("Análisis H/V")
+                fig_hv = graficar_hv(resultados_hv, st)
+                st.plotly_chart(fig_hv)
+                
+                st.subheader("Estadísticas del análisis H/V")
+                st.write(f"Frecuencia fundamental (X/Z): {resultados_hv['frecuencia_fundamental_xz']:.2f} Hz")
+                st.write(f"Frecuencia fundamental (Y/Z): {resultados_hv['frecuencia_fundamental_yz']:.2f} Hz")
 
-                    if abs(resultados_hv['frecuencia_fundamental_xz'] - 1.16) <= 0.05:
-                        st.success("La frecuencia fundamental (X/Z) coincide con el valor esperado de 1.16 Hz")
-                    else:
-                        st.info(f"La frecuencia fundamental (X/Z) calculada ({resultados_hv['frecuencia_fundamental_xz']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
-
-                    if abs(resultados_hv['frecuencia_fundamental_yz'] - 1.16) <= 0.05:
-                        st.success("La frecuencia fundamental (Y/Z) coincide con el valor esperado de 1.16 Hz")
-                    else:
-                        st.info(f"La frecuencia fundamental (Y/Z) calculada ({resultados_hv['frecuencia_fundamental_yz']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
-
-                    # Add download button for processed data
-                    output = descargar_datos_procesados(resultados_hv, fs)
-                    st.download_button(
-                        label="Descargar datos procesados",
-                        data=output,
-                        file_name="datos_procesados.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
+                if abs(resultados_hv['frecuencia_fundamental_xz'] - 1.16) <= 0.05:
+                    st.success("La frecuencia fundamental (X/Z) coincide con el valor esperado de 1.16 Hz")
                 else:
-                    st.error("No se pudo realizar el análisis H/V. Por favor, revise los datos de entrada y los parámetros.")
+                    st.info(f"La frecuencia fundamental (X/Z) calculada ({resultados_hv['frecuencia_fundamental_xz']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
+
+                if abs(resultados_hv['frecuencia_fundamental_yz'] - 1.16) <= 0.05:
+                    st.success("La frecuencia fundamental (Y/Z) coincide con el valor esperado de 1.16 Hz")
+                else:
+                    st.info(f"La frecuencia fundamental (Y/Z) calculada ({resultados_hv['frecuencia_fundamental_yz']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
 
     st.sidebar.header("Instrucciones")
     st.sidebar.markdown("""
@@ -459,13 +395,12 @@ def main():
        - Tamaño de ventana
        - Tipo de dispositivo
        - Suavizado de la curva H/V
-       - Filtro de ruido (opcional)
     5. Haga clic en 'Analizar datos' para ver:
        - Canales filtrados individualmente
        - Análisis H/V
        - Estadísticas del análisis
-    6. Descargue los resultados si lo desea.
     """)
 
 if __name__ == "__main__":
     main()
+
