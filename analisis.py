@@ -154,7 +154,7 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000,
             window_length = 15 if device_type == 'mobile' else 11 
             fx_suavizado = signal.savgol_filter(fx, windows_length=window_length, polyorder=3)
             fy_suavizado = signal.savgol_filter(fy, windows_length=window_length, polyorder=3)
-            fz_suavizado = signal.savgol_filter(fx, windows_length=window_length, polyorder=3)
+            fz_suavizado = signal.savgol_filter(fz, windows_length=window_length, polyorder=3)
             
             
             # Acumular cocientes
