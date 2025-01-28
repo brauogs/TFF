@@ -332,7 +332,12 @@ def main():
         if selected_file:
             file_content = download_file(st.session_state.user.uid, selected_file)
             if file_content:
-                st.download_button(label="Descargar archivo seleccionado", data=file_content, file_name=selected_file, mime="text/csv")
+                st.download_button(
+                    label="Descargar archivo seleccionado",
+                    data=file_content,
+                    file_name=selected_file,
+                    mime="text/csv"
+                )
             
             df = pd.read_csv(io.BytesIO(file_content))
             st.write("Visualizar datos:")
@@ -356,6 +361,24 @@ def main():
 
             suavizar_hv = st.sidebar.checkbox("Suavizar curva H/V", value=True)
 
+            aplicar_filtro_ruido = st.sidebar.checkbox("Aplicar filtro de ruido", value=False)
+            if aplicar_filtro_ruido:
+                window_length = st.sidebar.slider(
+                    "Longitud de ventana para filtro de ruido", 
+                    min_value=11, 
+                    max_value=101, 
+                    value=51, 
+                    step=2,
+                    help="Debe ser un número impar. Un valor más alto suaviza más la señal."
+                )
+                polyorder = st.sidebar.slider(
+                    "Orden del polinomio", 
+                    min_value=2, 
+                    max_value=5, 
+                    value=3,
+                    help="Orden del polinomio para el filtro. Un valor más bajo suaviza más la señal."
+                )
+
             if st.button("Analizar datos"):
                 datos_x = df['x'].values
                 datos_y = df['y'].values
@@ -374,39 +397,56 @@ def main():
                     df_comparacion.columns = ['x_original', 'y_original', 'z_original', 'x_dividido', 'y_dividido', 'z_dividido']
                     st.write(df_comparacion)
                 
-                    resultados_hv = analisis_hv_mejorado(
-                            datos_x, datos_y, datos_z,
-                            fs=fs,
-                            num_ventanas=num_ventanas,
-                            tamano_ventana=tamano_ventana,
-                            suavizado=suavizar_hv
-                        )
-                        
-                    if resultados_hv is not None:
-                        st.subheader("Canales filtrados (0.05-1.5 Hz)")
-                        fig_canales = graficar_canales_individuales(
-                            datos_x, datos_y, datos_z, fs, st, device_type
-                        )
-                        st.plotly_chart(fig_canales)
+                if aplicar_filtro_ruido:
+                    datos_x = reducir_ruido(datos_x, window_length, polyorder)
+                    datos_y = reducir_ruido(datos_y, window_length, polyorder)
+                    datos_z = reducir_ruido(datos_z, window_length, polyorder)
+                
+                resultados_hv = analisis_hv_mejorado(
+                    datos_x, datos_y, datos_z,
+                    fs=fs,
+                    num_ventanas=num_ventanas,
+                    tamano_ventana=tamano_ventana,
+                    suavizado=suavizar_hv,
+                    fmax=1.5  # Limit analysis to 1.5 Hz
+                )
+                
+                if resultados_hv is not None:
+                    st.subheader("Canales filtrados (0.05-1.5 Hz)")
+                    fig_canales = graficar_canales_individuales(
+                        datos_x, datos_y, datos_z, fs, st, device_type
+                    )
+                    st.plotly_chart(fig_canales)
+                    
+                    st.subheader("Análisis H/V")
+                    fig_hv = graficar_hv(resultados_hv, st)
+                    if fig_hv is not None:
+                        st.plotly_chart(fig_hv)
+                    
+                    st.subheader("Estadísticas del análisis H/V")
+                    st.write(f"Frecuencia fundamental (X/Z): {resultados_hv['frecuencia_fundamental_xz']:.2f} Hz")
+                    st.write(f"Frecuencia fundamental (Y/Z): {resultados_hv['frecuencia_fundamental_yz']:.2f} Hz")
 
-                        st.subheader("Análisis H/V")
-                        fig_hv = graficar_hv(resultados_hv, st)
-                        if fig_hv is not None:
-                            st.plotly_chart(fig_hv)
-                            
-                        st.subheader("Estadísticas del análisis H/V")
-                        st.write(f"Frecuencia fundamental (X/Z): {resultados_hv['frecuencia_fundamental_xz']:.2f} Hz")
-                        st.write(f"Frecuencia fundamental (Y/Z): {resultados_hv['frecuencia_fundamental_yz']:.2f} Hz")
+                    if abs(resultados_hv['frecuencia_fundamental_xz'] - 1.16) <= 0.05:
+                        st.success("La frecuencia fundamental (X/Z) coincide con el valor esperado de 1.16 Hz")
+                    else:
+                        st.info(f"La frecuencia fundamental (X/Z) calculada ({resultados_hv['frecuencia_fundamental_xz']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
 
-                if abs(resultados_hv['frecuencia_fundamental_xz'] - 1.16) <= 0.05:
-                    st.success("La frecuencia fundamental (X/Z) coincide con el valor esperado de 1.16 Hz")
+                    if abs(resultados_hv['frecuencia_fundamental_yz'] - 1.16) <= 0.05:
+                        st.success("La frecuencia fundamental (Y/Z) coincide con el valor esperado de 1.16 Hz")
+                    else:
+                        st.info(f"La frecuencia fundamental (Y/Z) calculada ({resultados_hv['frecuencia_fundamental_yz']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
+
+                    # Add download button for processed data
+                    output = descargar_datos_procesados(resultados_hv, fs)
+                    st.download_button(
+                        label="Descargar datos procesados",
+                        data=output,
+                        file_name="datos_procesados.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
                 else:
-                    st.info(f"La frecuencia fundamental (X/Z) calculada ({resultados_hv['frecuencia_fundamental_xz']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
-
-                if abs(resultados_hv['frecuencia_fundamental_yz'] - 1.16) <= 0.05:
-                    st.success("La frecuencia fundamental (Y/Z) coincide con el valor esperado de 1.16 Hz")
-                else:
-                    st.info(f"La frecuencia fundamental (Y/Z) calculada ({resultados_hv['frecuencia_fundamental_yz']:.2f} Hz) difiere del valor esperado (1.16 Hz)")
+                    st.error("No se pudo realizar el análisis H/V. Por favor, revise los datos de entrada y los parámetros.")
 
     st.sidebar.header("Instrucciones")
     st.sidebar.markdown("""
@@ -419,12 +459,13 @@ def main():
        - Tamaño de ventana
        - Tipo de dispositivo
        - Suavizado de la curva H/V
+       - Filtro de ruido (opcional)
     5. Haga clic en 'Analizar datos' para ver:
        - Canales filtrados individualmente
        - Análisis H/V
        - Estadísticas del análisis
+    6. Descargue los resultados si lo desea.
     """)
 
 if __name__ == "__main__":
     main()
-
