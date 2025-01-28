@@ -160,7 +160,7 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000,
             # Acumular cocientes
             with np.errstate(divide='ignore', invalid='ignore'):
                 cociente_xz += fx_suavizado / fz_suavizado/ num_ventanas
-                cociente_xy += fy_suavizado / fz_suavizado/ num_ventanas
+                cociente_yz += fy_suavizado / fz_suavizado/ num_ventanas
                 cociente_xz2 += ((fx_suavizado / fz_suavizado)**2) / num_ventanas
                 cociente_yz2 += ((fy_suavizado / fz_suavizado)**2)/ num_ventanas
 
