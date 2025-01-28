@@ -69,7 +69,7 @@ def corregir_linea_base(datos):
 
 # Una vez
 def aplicar_filtro_pasabanda(datos, fs, fmin=0.05, fmax=10):
-    nyq = 0.1 * fs
+    nyq = 0.5 * fs
     b, a = signal.butter(4, [fmin/nyq, fmax/nyq], btype='band')
     return signal.filtfilt(b, a, datos)
 
