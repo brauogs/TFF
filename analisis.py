@@ -72,7 +72,7 @@ def corregir_linea_base(datos):
 def aplicar_filtro_pasabanda(datos, fs, fmin=0.05, fmax=10):
     nyq = 0.5 * fs
     b, a = signal.butter(4, [fmin/nyq, fmax/nyq], btype='band')
-    return signal.filtfilt(b, a, datos)
+    return signal.lfilter(b, a, datos)
 
 def calcular_espectro_fourier(datos, fs):
     n = len(datos)
@@ -89,11 +89,11 @@ def preprocesar_movil(datos, fs):
         # 1. Filtro notch para eliminar interferencia eléctrica (50/60 Hz)
         notch_freq = 60 if fs > 100 else 50
         b, a = signal.iirnotch(notch_freq, 30, fs)
-        datos_filtrados = signal.filtfilt(b, a, datos)
+        datos_filtrados = signal.lfilter(b, a, datos)
         
         # 2. Filtro pasa-altos adicional para eliminar deriva
         b_hp, a_hp = signal.butter(2, 0.5/(fs/2), btype='high')
-        return signal.filtfilt(b_hp, a_hp, datos_filtrados)
+        return signal.lfilter(b_hp, a_hp, datos_filtrados)
     except Exception as e:
         st.error(f"Error en preprocesamiento móvil: {str(e)}")
         return datos
