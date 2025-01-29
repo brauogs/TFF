@@ -123,14 +123,8 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, devi
         y = aplicar_filtro_pasabanda(y, fs, fmin=fmin, fmax=fmax)
         z = aplicar_filtro_pasabanda(z, fs, fmin=fmin, fmax=fmax)
 
-        # Windows for H/V
-        # este tamaño de ventana de 1000 puntos o 10 segundos se ve que funciona mejor y esta dentro
-        # de lo recomendado en la literatura
+
         wl = int(1000)
-        # aumente el numero de ventanas a 100, se ve que como el sensor de iphone tiene menos sensibilidad hay factores
-        # influyen mas que con el acelerometro
-        # lo que habría que hacer es muestrear a otras horas y otros días
-        # eso lo voy a hacer ya en el futuro
         # para tu informe simplemente menciona que con 100 ventanas se obtienen resultados estables
         nw = 100
 
@@ -326,7 +320,7 @@ def graficar_hv(resultados_hv, st):
         yaxis_title="H/V",
         xaxis_type="log",
         yaxis_type="log",
-        xaxis_range=[np.log10(0.1), np.log10(50)],  # Rango típico para H/V
+        xaxis_range=[np.log10(0.1), np.log10(10)],  # Rango típico para H/V
         yaxis_range=[np.log10(0.1), np.log10(10)],  # Rango típico para H/V
         plot_bgcolor='white',
         width=800,
