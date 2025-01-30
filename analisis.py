@@ -72,7 +72,7 @@ def corregir_linea_base(datos):
 def aplicar_filtro_pasabanda(datos, fs, fmin=0.05, fmax=10):
     nyq = 0.5 * fs
     b, a = signal.butter(4, [fmin/nyq, fmax/nyq], btype='band')
-    return signal.lfilter(b, a, datos)
+    return signal.filtfilt(b, a, datos)
 
 def calcular_espectro_fourier(datos, fs):
     n = len(datos)
@@ -89,11 +89,11 @@ def preprocesar_movil(datos, fs):
         # 1. Filtro notch para eliminar interferencia eléctrica (50/60 Hz)
         notch_freq = 60 if fs > 100 else 50
         b, a = signal.iirnotch(notch_freq, 30, fs)
-        datos_filtrados = signal.lfilter(b, a, datos)
+        datos_filtrados = signal.filtfilt(b, a, datos)
         
         # 2. Filtro pasa-altos adicional para eliminar deriva
         b_hp, a_hp = signal.butter(2, 0.5/(fs/2), btype='high')
-        return signal.lfilter(b_hp, a_hp, datos_filtrados)
+        return signal.filtfilt(b_hp, a_hp, datos_filtrados)
     except Exception as e:
         st.error(f"Error en preprocesamiento móvil: {str(e)}")
         return datos
@@ -123,8 +123,14 @@ def analisis_hv_mejorado(x, y, z, fs, num_ventanas=20, tamano_ventana=2000, devi
         y = aplicar_filtro_pasabanda(y, fs, fmin=fmin, fmax=fmax)
         z = aplicar_filtro_pasabanda(z, fs, fmin=fmin, fmax=fmax)
 
-
+        # Windows for H/V
+        # este tamaño de ventana de 1000 puntos o 10 segundos se ve que funciona mejor y esta dentro
+        # de lo recomendado en la literatura
         wl = int(1000)
+        # aumente el numero de ventanas a 100, se ve que como el sensor de iphone tiene menos sensibilidad hay factores
+        # influyen mas que con el acelerometro
+        # lo que habría que hacer es muestrear a otras horas y otros días
+        # eso lo voy a hacer ya en el futuro
         # para tu informe simplemente menciona que con 100 ventanas se obtienen resultados estables
         nw = 100
 
@@ -228,11 +234,16 @@ def graficar_canales_individuales(x, y, z, fs, st, device_type='accelerometer'):
     tiempo = np.arange(len(x)) / fs
     line_width = 1 if device_type == 'accelerometer' else 3
     
-    fig.add_trace(go.Scatter(x=tiempo, y=x, name='X', line=dict(width=line_width)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=tiempo, y=y, name='Y', line=dict(width=line_width)), row=2, col=1)
-    fig.add_trace(go.Scatter(x=tiempo, y=z, name='Z', line=dict(width=line_width)), row=3, col=1)
+    # Apply baseline correction
+    x_corregido = corregir_linea_base(x)
+    y_corregido = corregir_linea_base(y)
+    z_corregido = corregir_linea_base(z)
     
-    fig.update_layout(height=800, showlegend=True, title_text=f"Canales filtrados (0.05-10 Hz) - {device_type.title()}")
+    fig.add_trace(go.Scatter(x=tiempo, y=x_corregido, name='X', line=dict(width=line_width)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=tiempo, y=y_corregido, name='Y', line=dict(width=line_width)), row=2, col=1)
+    fig.add_trace(go.Scatter(x=tiempo, y=z_corregido, name='Z', line=dict(width=line_width)), row=3, col=1)
+    
+    fig.update_layout(height=800, showlegend=True, title_text=f"Canales filtrados y corregidos (0.05-10 Hz) - {device_type.title()}")
     
     img_bytes = fig.to_image(format="png")
     st.download_button(label="Descargar gráfica como imagen", data=img_bytes, file_name="grafica_canales.png", mime="image/png")
@@ -320,7 +331,7 @@ def graficar_hv(resultados_hv, st):
         yaxis_title="H/V",
         xaxis_type="log",
         yaxis_type="log",
-        xaxis_range=[np.log10(0.1), np.log10(10)],  # Rango típico para H/V
+        xaxis_range=[np.log10(0.1), np.log10(50)],  # Rango típico para H/V
         yaxis_range=[np.log10(0.1), np.log10(10)],  # Rango típico para H/V
         plot_bgcolor='white',
         width=800,
